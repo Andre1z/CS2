@@ -1,25 +1,19 @@
 <?php
 
-require_once '../config/config.php';
+declare(strict_types=1);
 
-$params = [
+require_once __DIR__ . '/../config/config.php';
 
-    'openid.ns' => 'http://specs.openid.net/auth/2.0',
+require_once __DIR__ . '/../vendor/autoload.php';
 
-    'openid.mode' => 'checkid_setup',
+use CS2\Steam\SteamAuth;
 
-    'openid.return_to' => BASE_URL . '/steam_callback.php',
+$auth = new SteamAuth(
+    APP_URL . '/steam_callback.php'
+);
 
-    'openid.realm' => BASE_URL,
-
-    'openid.identity' => 'http://specs.openid.net/auth/2.0/identifier_select',
-
-    'openid.claimed_id' => 'http://specs.openid.net/auth/2.0/identifier_select'
-
-];
-
-$url = STEAM_OPENID_URL . '?' . http_build_query($params);
-
-header('Location: ' . $url);
+header(
+    'Location: ' . $auth->getLoginUrl()
+);
 
 exit;

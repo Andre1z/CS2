@@ -1,62 +1,83 @@
 <?php
 
-require_once '../config/config.php';
+declare(strict_types=1);
+
+require_once __DIR__ . '/../config/config.php';
+
+$isLoggedIn = isset($_SESSION['steamid']);
 
 ?>
 
 <!DOCTYPE html>
+
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>CS2 Inventory</title>
 
-    <link rel="stylesheet" href="css/style.css">
+    <link
+        rel="stylesheet"
+        href="css/style.css"
+    >
 
 </head>
 
 <body>
 
-    <div class="container">
+<header class="navbar">
 
-        <h1>CS2 Inventory</h1>
+    <div class="logo">
+        CS2 INVENTORY
+    </div>
+
+</header>
+
+<main class="hero">
+
+    <div class="hero-content">
+
+        <h1>
+            Descubre cuánto vale tu inventario de CS2
+        </h1>
 
         <p>
-            Consulta el valor de tu inventario de Counter-Strike 2.
+            Conecta tu cuenta de Steam y consulta
+            el valor de todos tus objetos.
         </p>
 
-        <?php if (isset($_SESSION['steamid'])): ?>
+        <?php if ($isLoggedIn): ?>
 
-            <p>
-                Has iniciado sesión correctamente.
-            </p>
-
-            <p>
-                SteamID:
-                <strong>
-                    <?= htmlspecialchars($_SESSION['steamid']) ?>
-                </strong>
-            </p>
-
-            <a href="logout.php">
-                Cerrar sesión
+            <a
+                href="inventory.php"
+                class="steam-button"
+            >
+                Ver mi inventario
             </a>
 
         <?php else: ?>
 
-            <a href="login.php" class="steam-button">
-
+            <a
+                href="login.php"
+                class="steam-button"
+            >
                 🔵 Iniciar sesión con Steam
-
             </a>
 
         <?php endif; ?>
 
     </div>
+
+</main>
+
+<script src="js/app.js"></script>
 
 </body>
 
