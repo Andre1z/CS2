@@ -12,30 +12,56 @@ $auth = new SteamAuth(
     APP_URL . '/steam_callback.php'
 );
 
+/*
+ * Comprobar que Steam ha devuelto
+ * una respuesta OpenID.
+ */
+if (empty($_GET['openid_mode'])) {
+
+    die(
+        'Steam no ha devuelto una respuesta válida.'
+    );
+}
+
+/*
+ * Verificar la respuesta con Steam.
+ */
 if (!$auth->validateResponse($_GET)) {
 
     http_response_code(401);
 
-    die('No se pudo verificar la autenticación con Steam.');
+    die(
+        'No se pudo verificar la autenticación con Steam.'
+    );
 }
 
+/*
+ * Obtener SteamID64.
+ */
 $steamId = $auth->getSteamId($_GET);
 
 if ($steamId === null) {
 
     http_response_code(400);
 
-    die('SteamID no válido.');
+    die(
+        'No se pudo obtener el SteamID.'
+    );
 }
 
 /*
- * Regeneramos la sesión para evitar
- * problemas de session fixation.
+ * Regenerar la sesión.
  */
 session_regenerate_id(true);
 
+/*
+ * Guardar SteamID.
+ */
 $_SESSION['steamid'] = $steamId;
 
+/*
+ * Ir al inventario.
+ */
 header(
     'Location: ' . APP_URL . '/inventory.php'
 );

@@ -1,10 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 session_start();
 
-define('STEAM_OPENID_URL', 'https://steamcommunity.com/openid/');
+define(
+    'BASE_PATH',
+    dirname(__DIR__)
+);
 
-// IMPORTANTE:
-// Cambia esto por la URL donde esté alojado tu proyecto.
-
-define('BASE_URL', 'http://localhost/CS2');
+define(
+    'APP_URL',
+    getenv('APP_URL') ?: 'http://localhost:8000'
+);
