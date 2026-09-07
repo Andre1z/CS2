@@ -10,43 +10,46 @@ use CS2\Steam\SteamInventory;
 use CS2\Pricing\PriceService;
 
 if (!isset($_SESSION['steamid'])) {
-
     header('Location: index.php');
-
     exit;
 }
 
-$steamId = $_SESSION['steamid'];
+$steamId =
+    $_SESSION['steamid'];
 
 $error = null;
+
 $items = [];
+
 $total = 0;
 
 try {
 
-    $inventoryService = new SteamInventory();
+    $inventoryService =
+        new SteamInventory();
 
-    $items = $inventoryService->getInventory(
-        $steamId
-    );
+    $items =
+        $inventoryService
+            ->getInventory($steamId);
 
-    $priceService = new PriceService();
+    $priceService =
+        new PriceService();
 
-    $items = $priceService->addPrices(
-        $items
-    );
+    $items =
+        $priceService
+            ->addPrices($items);
 
-    $total = $priceService->calculateTotal(
-        $items
-    );
+    $total =
+        $priceService
+            ->calculateTotal($items);
 
 } catch (Throwable $e) {
 
-    $error = $e->getMessage();
+    $error =
+        $e->getMessage();
 }
 
 ?>
-
 <!DOCTYPE html>
 
 <html lang="es">
@@ -60,7 +63,9 @@ try {
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Mi inventario - CS2 Inventory</title>
+    <title>
+        Mi inventario - CS2 Inventory
+    </title>
 
     <link
         rel="stylesheet"
@@ -108,12 +113,16 @@ try {
                 </span>
 
                 <strong>
+
                     <?= number_format(
                         $total,
                         2,
                         ',',
                         '.'
-                    ) ?> €
+                    ) ?>
+
+                    €
+
                 </strong>
 
             </div>
@@ -131,7 +140,6 @@ try {
             </div>
 
         </section>
-
 
         <section class="inventory">
 
@@ -159,9 +167,11 @@ try {
                         <div class="item-info">
 
                             <h3>
+
                                 <?= htmlspecialchars(
                                     $item['name']
                                 ) ?>
+
                             </h3>
 
                             <small>
@@ -177,14 +187,18 @@ try {
 
                         <div class="item-price">
 
-                            <?php if ($item['price'] !== null): ?>
+                            <?php if (
+                                $item['price'] !== null
+                            ): ?>
 
                                 <?= number_format(
                                     $item['price'],
                                     2,
                                     ',',
                                     '.'
-                                ) ?> €
+                                ) ?>
+
+                                €
 
                             <?php else: ?>
 

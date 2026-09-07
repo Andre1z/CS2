@@ -7,6 +7,7 @@ namespace CS2\Steam;
 class SteamInventory
 {
     private const APP_ID = 730;
+
     private const CONTEXT_ID = 2;
 
     /**
@@ -15,7 +16,6 @@ class SteamInventory
     public function getInventory(
         string $steamId
     ): array {
-
         $url = sprintf(
             'https://steamcommunity.com/inventory/%s/%d/%d?l=english&count=5000',
             $steamId,
@@ -26,7 +26,6 @@ class SteamInventory
         $ch = curl_init($url);
 
         curl_setopt_array($ch, [
-
             CURLOPT_RETURNTRANSFER => true,
 
             CURLOPT_TIMEOUT => 15,
@@ -35,7 +34,6 @@ class SteamInventory
 
             CURLOPT_USERAGENT =>
                 'CS2 Inventory Website/1.0'
-
         ]);
 
         $response = curl_exec($ch);
@@ -45,19 +43,21 @@ class SteamInventory
             CURLINFO_HTTP_CODE
         );
 
+        $curlError = curl_error($ch);
+
         curl_close($ch);
 
         if ($response === false) {
-
             throw new \RuntimeException(
-                'No se pudo conectar con Steam.'
+                'No se pudo conectar con Steam: '
+                . $curlError
             );
         }
 
         if ($httpCode !== 200) {
-
             throw new \RuntimeException(
-                'Steam no ha devuelto el inventario.'
+                'Steam no ha devuelto el inventario. HTTP: '
+                . $httpCode
             );
         }
 
@@ -67,7 +67,6 @@ class SteamInventory
         );
 
         if (!is_array($data)) {
-
             throw new \RuntimeException(
                 'Respuesta de Steam inválida.'
             );
@@ -77,39 +76,42 @@ class SteamInventory
     }
 
     /**
-     * Convierte la respuesta de Steam
-     * en una estructura más sencilla.
+     * Procesa la respuesta de Steam.
      */
     private function processInventory(
         array $data
     ): array {
+        $assets =
+            $data['assets'] ?? [];
 
-        $assets = $data['assets'] ?? [];
-        $descriptions = $data['descriptions'] ?? [];
+        $descriptions =
+            $data['descriptions'] ?? [];
 
         $items = [];
 
         foreach ($assets as $asset) {
+            $classId =
+                $asset['classid'] ?? null;
 
-            $classId = $asset['classid'] ?? null;
-            $instanceId = $asset['instanceid'] ?? '0';
+            $instanceId =
+                $asset['instanceid'] ?? '0';
 
             if (!$classId) {
                 continue;
             }
 
-            $description = $this->findDescription(
-                $descriptions,
-                $classId,
-                $instanceId
-            );
+            $description =
+                $this->findDescription(
+                    $descriptions,
+                    $classId,
+                    $instanceId
+                );
 
             if (!$description) {
                 continue;
             }
 
             $items[] = [
-
                 'assetid' =>
                     $asset['assetid'] ?? null,
 
@@ -120,37 +122,46 @@ class SteamInventory
                     $instanceId,
 
                 'name' =>
-                    $description['name'] ?? 'Objeto desconocido',
+                    $description['name']
+                    ?? 'Objeto desconocido',
 
                 'market_hash_name' =>
                     $description['market_hash_name']
                     ?? null,
 
                 'icon_url' =>
-                    $description['icon_url'] ?? null,
+                    $description['icon_url']
+                    ?? null,
 
                 'tradable' =>
-                    $description['tradable'] ?? 0,
+                    $description['tradable']
+                    ?? 0,
 
                 'marketable' =>
-                    $description['marketable'] ?? 0
+                    $description['marketable']
+                    ?? 0
             ];
         }
 
         return $items;
     }
 
+    /**
+     * Busca la descripción correspondiente
+     * a un asset.
+     */
     private function findDescription(
         array $descriptions,
         string $classId,
         string $instanceId
     ): ?array {
-
         foreach ($descriptions as $description) {
-
             if (
-                ($description['classid'] ?? '') === $classId &&
-                ($description['instanceid'] ?? '0') === $instanceId
+                ($description['classid'] ?? '')
+                    === $classId
+                &&
+                ($description['instanceid'] ?? '0')
+                    === $instanceId
             ) {
                 return $description;
             }

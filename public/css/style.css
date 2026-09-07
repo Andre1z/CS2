@@ -28,7 +28,8 @@ body {
 
     background: #17191f;
 
-    border-bottom: 1px solid #292c33;
+    border-bottom:
+        1px solid #292c33;
 }
 
 .logo {
@@ -46,7 +47,8 @@ body {
 }
 
 .hero {
-    min-height: calc(100vh - 70px);
+    min-height:
+        calc(100vh - 70px);
 
     display: flex;
 
@@ -130,7 +132,8 @@ body {
 .stat-card {
     background: #191c22;
 
-    border: 1px solid #292d35;
+    border:
+        1px solid #292d35;
 
     border-radius: 8px;
 
@@ -168,7 +171,8 @@ body {
 
     background: #191c22;
 
-    border: 1px solid #292d35;
+    border:
+        1px solid #292d35;
 
     border-radius: 6px;
 }
@@ -186,7 +190,8 @@ body {
 }
 
 .item-info h3 {
-    margin: 0 0 8px;
+    margin:
+        0 0 8px;
 }
 
 .item-info small {
@@ -208,7 +213,8 @@ body {
 
     background: #4d2020;
 
-    border: 1px solid #8b3c3c;
+    border:
+        1px solid #8b3c3c;
 
     border-radius: 6px;
 }

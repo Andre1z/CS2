@@ -7,43 +7,39 @@ namespace CS2\Pricing;
 class PriceService
 {
     /**
-     * Devuelve el precio de un objeto.
+     * Obtiene el precio de un objeto.
      *
-     * De momento devuelve null porque
-     * todavía no hemos conectado el proveedor
-     * de precios.
+     * Actualmente es un placeholder.
      */
     public function getPrice(
         ?string $marketHashName
     ): ?float {
-
         if (!$marketHashName) {
             return null;
         }
 
         /*
          * TODO:
-         *
-         * Aquí conectaremos la API
-         * de precios que decidamos utilizar.
+         * Aquí conectaremos la API de precios.
          */
 
         return null;
     }
 
     /**
-     * Añade los precios al inventario.
+     * Añade precios a los objetos.
      */
     public function addPrices(
         array $items
     ): array {
-
         foreach ($items as &$item) {
-
-            $item['price'] = $this->getPrice(
-                $item['market_hash_name']
-            );
+            $item['price'] =
+                $this->getPrice(
+                    $item['market_hash_name']
+                );
         }
+
+        unset($item);
 
         return $items;
     }
@@ -54,14 +50,14 @@ class PriceService
     public function calculateTotal(
         array $items
     ): float {
-
         $total = 0.0;
 
         foreach ($items as $item) {
-
-            if ($item['price'] !== null) {
-
-                $total += (float) $item['price'];
+            if (
+                $item['price'] !== null
+            ) {
+                $total +=
+                    (float) $item['price'];
             }
         }
 

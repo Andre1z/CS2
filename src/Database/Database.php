@@ -13,17 +13,24 @@ class Database
 
     public function __construct()
     {
-        $host = getenv('DB_HOST') ?: '127.0.0.1';
+        $host =
+            getenv('DB_HOST')
+            ?: '127.0.0.1';
 
-        $port = getenv('DB_PORT') ?: '3306';
+        $port =
+            getenv('DB_PORT')
+            ?: '3306';
 
-        $database = getenv('DB_NAME')
+        $database =
+            getenv('DB_NAME')
             ?: 'cs2_inventory';
 
-        $username = getenv('DB_USER')
+        $username =
+            getenv('DB_USER')
             ?: 'root';
 
-        $password = getenv('DB_PASSWORD')
+        $password =
+            getenv('DB_PASSWORD')
             ?: '';
 
         $dsn = sprintf(
@@ -34,25 +41,23 @@ class Database
         );
 
         try {
+            $this->connection =
+                new PDO(
+                    $dsn,
+                    $username,
+                    $password,
+                    [
+                        PDO::ATTR_ERRMODE =>
+                            PDO::ERRMODE_EXCEPTION,
 
-            $this->connection = new PDO(
-                $dsn,
-                $username,
-                $password,
-                [
-                    PDO::ATTR_ERRMODE =>
-                        PDO::ERRMODE_EXCEPTION,
+                        PDO::ATTR_DEFAULT_FETCH_MODE =>
+                            PDO::FETCH_ASSOC,
 
-                    PDO::ATTR_DEFAULT_FETCH_MODE =>
-                        PDO::FETCH_ASSOC,
-
-                    PDO::ATTR_EMULATE_PREPARES =>
-                        false
-                ]
-            );
-
+                        PDO::ATTR_EMULATE_PREPARES =>
+                            false
+                    ]
+                );
         } catch (PDOException $e) {
-
             throw new \RuntimeException(
                 'Error conectando con la base de datos.'
             );

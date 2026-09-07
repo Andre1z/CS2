@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/config.php';
 
-$isLoggedIn = isset($_SESSION['steamid']);
+$isLoggedIn =
+    isset($_SESSION['steamid']);
 
 ?>
-
 <!DOCTYPE html>
 
 <html lang="es">
