@@ -21,10 +21,13 @@ $error = null;
 
 $items = [];
 
-$total = 0;
+$total = 0.0;
 
 try {
 
+    /*
+     * Obtener inventario de Steam.
+     */
     $inventoryService =
         new SteamInventory();
 
@@ -32,6 +35,9 @@ try {
         $inventoryService
             ->getInventory($steamId);
 
+    /*
+     * Obtener precios de CSGO Trader.
+     */
     $priceService =
         new PriceService();
 
@@ -39,6 +45,9 @@ try {
         $priceService
             ->addPrices($items);
 
+    /*
+     * Calcular valor total.
+     */
     $total =
         $priceService
             ->calculateTotal($items);
@@ -47,6 +56,7 @@ try {
 
     $error =
         $e->getMessage();
+
 }
 
 ?>
@@ -98,7 +108,9 @@ try {
 
         <div class="error">
 
-            <?= htmlspecialchars($error) ?>
+            <?= htmlspecialchars(
+                $error
+            ) ?>
 
         </div>
 
@@ -151,15 +163,24 @@ try {
 
             <?php else: ?>
 
-                <?php foreach ($items as $item): ?>
+                <?php foreach (
+                    $items as $item
+                ): ?>
 
                     <div class="item">
 
-                        <?php if ($item['icon_url']): ?>
+                        <?php if (
+                            !empty(
+                                $item['icon_url']
+                            )
+                        ): ?>
 
                             <img
-                                src="https://steamcommunity-a.akamaihd.net/economy/image/<?= htmlspecialchars($item['icon_url']) ?>/128fx128f"
+                                src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
+                                    $item['icon_url']
+                                ) ?>/128fx128f"
                                 alt=""
+                                loading="lazy"
                             >
 
                         <?php endif; ?>
@@ -188,7 +209,8 @@ try {
                         <div class="item-price">
 
                             <?php if (
-                                $item['price'] !== null
+                                $item['price']
+                                !== null
                             ): ?>
 
                                 <?= number_format(
