@@ -28,12 +28,16 @@ $items = [];
 
 $total = 0.0;
 
+$priceVersion = null;
+
+$priceUpdatedAt = null;
+
 try {
     /*
-     * 1. INVENTARIO
+     * INVENTARIO
      *
-     * El inventario se obtiene
-     * directamente desde Steam.
+     * Siempre viene directamente
+     * desde Steam.
      */
     $inventoryService =
         new SteamInventory();
@@ -45,10 +49,12 @@ try {
             );
 
     /*
-     * 2. PRECIOS
+     * PRECIOS
      *
-     * CSGO Trader solamente proporciona
-     * los precios de los objetos.
+     * Aquí NO se descarga nada.
+     *
+     * PriceService solamente lee
+     * la caché local del servidor.
      */
     $priceService =
         new PriceService();
@@ -59,14 +65,19 @@ try {
                 $items
             );
 
-    /*
-     * 3. VALOR TOTAL
-     */
     $total =
         $priceService
             ->calculateTotal(
                 $items
             );
+
+    $priceVersion =
+        $priceService
+            ->getVersion();
+
+    $priceUpdatedAt =
+        $priceService
+            ->getUpdatedAt();
 
 } catch (
     Throwable $e
@@ -139,7 +150,7 @@ try {
             <div class="stat-card">
 
                 <span>
-                    Valor total
+                    Valor estimado
                 </span>
 
                 <strong>
@@ -171,11 +182,24 @@ try {
 
         </section>
 
+        <?php if ($priceUpdatedAt): ?>
+
+            <p class="price-update-info">
+
+                Precios actualizados:
+
+                <?= date(
+                    'd/m/Y H:i',
+                    $priceUpdatedAt
+                ) ?>
+
+            </p>
+
+        <?php endif; ?>
+
         <section class="inventory">
 
-            <?php if (
-                empty($items)
-            ): ?>
+            <?php if (empty($items)): ?>
 
                 <p>
                     No se encontraron objetos.
@@ -238,18 +262,33 @@ try {
                             <?php if (
                                 isset(
                                     $item['price']
-                                ) &&
+                                )
+                                &&
                                 $item['price'] !== null
                             ): ?>
 
-                                <?= number_format(
-                                    (float) $item['price'],
-                                    2,
-                                    ',',
-                                    '.'
-                                ) ?>
+                                <strong>
 
-                                €
+                                    <?= number_format(
+                                        (float)
+                                            $item['price'],
+                                        2,
+                                        ',',
+                                        '.'
+                                    ) ?>
+
+                                    €
+
+                                </strong>
+
+                                <small>
+
+                                    <?= (int)
+                                        $item['price_count'] ?>
+
+                                    mercados
+
+                                </small>
 
                             <?php else: ?>
 
