@@ -37,10 +37,14 @@ class PriceService
         }
 
         return
-            (float)
-            $prices[
-                $marketHashName
-            ]['average'];
+            isset(
+                $prices[$marketHashName]['average']
+            )
+                ? (float)
+                    $prices[
+                        $marketHashName
+                    ]['average']
+                : null;
     }
 
     public function getPriceDetails(
@@ -85,7 +89,14 @@ class PriceService
 
             $item['price'] =
                 $details !== null
-                    ? $details['average']
+                    ? (
+                        isset(
+                            $details['average']
+                        )
+                            ? (float)
+                                $details['average']
+                            : null
+                    )
                     : null;
 
             $item['price_min'] =
@@ -107,6 +118,10 @@ class PriceService
             $item['price_markets'] =
                 $details['prices']
                 ?? [];
+
+            $item['price_providers'] =
+                $details['providers']
+                ?? [];
         }
 
         unset($item);
@@ -114,6 +129,13 @@ class PriceService
         return $items;
     }
 
+    /**
+     * Calcula el valor total del inventario.
+     *
+     * IMPORTANTE:
+     * El resultado se redondea deliberadamente
+     * a euros enteros.
+     */
     public function calculateTotal(
         array $items
     ): float {
@@ -124,17 +146,28 @@ class PriceService
         ) {
             if (
                 isset($item['price'])
-                &&
-                $item['price'] !== null
+                && $item['price'] !== null
             ) {
                 $total +=
-                    (float) $item['price'];
+                    (float)
+                    $item['price'];
             }
         }
 
-        return round(
+        /*
+         * Queremos:
+         *
+         * 12.37 € -> 12 €
+         * 12.50 € -> 13 €
+         * 12.81 € -> 13 €
+         *
+         * PHP_ROUND_HALF_UP evita comportamientos
+         * extraños con el redondeo convencional.
+         */
+        return (float) round(
             $total,
-            2
+            0,
+            PHP_ROUND_HALF_UP
         );
     }
 
