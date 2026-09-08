@@ -7,30 +7,23 @@ namespace CS2\Pricing;
 class PriceService
 {
     /**
-     * Fuente de precios de CSGO Trader.
-     *
-     * CSGO Trader publica dumps de precios que
-     * podemos utilizar para valorar los objetos.
+     * Endpoint utilizado por la propia extensión
+     * oficial de CSGO Trader.
      */
     private const PRICES_URL =
-        'https://prices.csgotrader.app/latest/prices_v6.json';
+        'https://prices.csgotrader.app/latest/csgotrader.json';
 
     /**
-     * Archivo de caché local.
+     * Cache local de precios.
      */
     private const CACHE_FILE =
-        __DIR__ . '/../../storage/prices_v6.json';
+        __DIR__ . '/../../storage/csgotrader_prices.json';
 
     /**
-     * Tiempo durante el que mantenemos el caché.
-     *
      * 15 minutos.
      */
     private const CACHE_TTL = 900;
 
-    /**
-     * Precios cargados en memoria.
-     */
     private ?array $prices = null;
 
     /**
@@ -39,64 +32,54 @@ class PriceService
     public function getPrice(
         ?string $marketHashName
     ): ?float {
-        if (!$marketHashName) {
+        if (
+            !$marketHashName ||
+            trim($marketHashName) === ''
+        ) {
             return null;
         }
 
         $prices = $this->getPrices();
 
         if (
-            !isset(
-                $prices[$marketHashName]
-            )
+            !isset($prices[$marketHashName])
         ) {
             return null;
         }
 
-        $item = $prices[$marketHashName];
+        $item =
+            $prices[$marketHashName];
 
-        /*
-         * Intentamos primero el precio propio
-         * de CSGO Trader.
-         */
         if (
-            isset($item['csgotrader']['price'])
+            !is_array($item) ||
+            !isset($item['price'])
         ) {
-            return $this->normalizePrice(
-                $item['csgotrader']['price']
-            );
+            return null;
         }
 
-        /*
-         * Algunas versiones/formas del fichero
-         * pueden utilizar otros campos.
-         */
-        if (
-            isset($item['csgotrader']['suggested_price'])
-        ) {
-            return $this->normalizePrice(
-                $item['csgotrader']['suggested_price']
-            );
-        }
-
-        return null;
+        return $this->normalizePrice(
+            $item['price']
+        );
     }
 
     /**
-     * Añade precios a todos los objetos.
+     * Añade el precio a cada objeto del inventario.
      */
     public function addPrices(
         array $items
     ): array {
-        /*
-         * Cargamos los precios una sola vez.
-         */
-        $this->getPrices();
+        $prices =
+            $this->getPrices();
 
         foreach ($items as &$item) {
+            $marketHashName =
+                $item['market_hash_name']
+                ?? null;
+
             $item['price'] =
-                $this->getPrice(
-                    $item['market_hash_name']
+                $this->getPriceFromPrices(
+                    $marketHashName,
+                    $prices
                 );
         }
 
@@ -106,7 +89,7 @@ class PriceService
     }
 
     /**
-     * Calcula el valor total del inventario.
+     * Calcula el valor total.
      */
     public function calculateTotal(
         array $items
@@ -127,10 +110,39 @@ class PriceService
     }
 
     /**
-     * Obtiene todos los precios.
-     *
-     * Primero intenta utilizar el caché.
-     * Si está caducado, descarga una versión nueva.
+     * Busca un precio dentro del listado descargado.
+     */
+    private function getPriceFromPrices(
+        ?string $marketHashName,
+        array $prices
+    ): ?float {
+        if (
+            !$marketHashName ||
+            !isset($prices[$marketHashName])
+        ) {
+            return null;
+        }
+
+        $item =
+            $prices[$marketHashName];
+
+        if (
+            !is_array($item) ||
+            !array_key_exists(
+                'price',
+                $item
+            )
+        ) {
+            return null;
+        }
+
+        return $this->normalizePrice(
+            $item['price']
+        );
+    }
+
+    /**
+     * Carga los precios desde cache o CSGO Trader.
      */
     private function getPrices(): array
     {
@@ -138,62 +150,77 @@ class PriceService
             return $this->prices;
         }
 
-        /*
-         * Crear directorio storage si no existe.
-         */
         $cacheDirectory =
             dirname(self::CACHE_FILE);
 
         if (
             !is_dir($cacheDirectory)
         ) {
-            mkdir(
-                $cacheDirectory,
-                0775,
-                true
-            );
+            if (
+                !mkdir(
+                    $cacheDirectory,
+                    0775,
+                    true
+                ) &&
+                !is_dir($cacheDirectory)
+            ) {
+                throw new \RuntimeException(
+                    'No se pudo crear el directorio '
+                    . 'de cache de precios.'
+                );
+            }
         }
 
-        /*
-         * Utilizar caché si todavía es válido.
+        /**
+         * Intentamos utilizar la cache.
          */
         if (
-            file_exists(self::CACHE_FILE)
-            &&
-            (
-                time()
-                - filemtime(self::CACHE_FILE)
-            ) < self::CACHE_TTL
+            file_exists(
+                self::CACHE_FILE
+            )
         ) {
-            $cached =
-                file_get_contents(
+            $age =
+                time()
+                - filemtime(
                     self::CACHE_FILE
                 );
 
-            if ($cached !== false) {
-                $data =
-                    json_decode(
-                        $cached,
-                        true
+            if (
+                $age < self::CACHE_TTL
+            ) {
+                $cached =
+                    file_get_contents(
+                        self::CACHE_FILE
                     );
 
-                if (is_array($data)) {
-                    $this->prices = $data;
+                if (
+                    $cached !== false
+                ) {
+                    $data =
+                        json_decode(
+                            $cached,
+                            true
+                        );
 
-                    return $this->prices;
+                    if (
+                        is_array($data)
+                    ) {
+                        $this->prices =
+                            $data;
+
+                        return $this->prices;
+                    }
                 }
             }
         }
 
-        /*
-         * Descargar precios actualizados.
+        /**
+         * La cache no existe o ha caducado.
+         * Descargamos los precios actuales.
          */
         $data =
             $this->downloadPrices();
 
-        /*
-         * Guardar caché.
-         */
         file_put_contents(
             self::CACHE_FILE,
             json_encode(
@@ -204,34 +231,45 @@ class PriceService
             LOCK_EX
         );
 
-        $this->prices = $data;
+        $this->prices =
+            $data;
 
         return $this->prices;
     }
 
     /**
-     * Descarga el fichero de precios.
+     * Descarga el listado de precios de CSGO Trader.
      */
     private function downloadPrices(): array
     {
-        $ch = curl_init(
-            self::PRICES_URL
-        );
+        $ch =
+            curl_init(
+                self::PRICES_URL
+            );
 
         curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_RETURNTRANSFER =>
+                true,
 
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_FOLLOWLOCATION =>
+                true,
 
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT =>
+                30,
 
-            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT =>
+                10,
 
-            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYPEER =>
+                true,
 
             CURLOPT_HTTPHEADER => [
-                'Accept: application/json'
+                'Accept: application/json',
+                'Accept-Encoding: gzip'
             ],
+
+            CURLOPT_ENCODING =>
+                '',
 
             CURLOPT_USERAGENT =>
                 'CS2Inventory/1.0'
@@ -246,20 +284,30 @@ class PriceService
                 CURLINFO_HTTP_CODE
             );
 
+        $contentType =
+            curl_getinfo(
+                $ch,
+                CURLINFO_CONTENT_TYPE
+            );
+
         $curlError =
             curl_error($ch);
 
         curl_close($ch);
 
-        if ($response === false) {
+        if (
+            $response === false
+        ) {
             throw new \RuntimeException(
-                'No se pudo descargar el listado '
-                . 'de precios de CSGO Trader: '
+                'No se pudo conectar con '
+                . 'CSGO Trader: '
                 . $curlError
             );
         }
 
-        if ($httpCode !== 200) {
+        if (
+            $httpCode !== 200
+        ) {
             throw new \RuntimeException(
                 'CSGO Trader ha devuelto HTTP '
                 . $httpCode
@@ -272,9 +320,19 @@ class PriceService
                 true
             );
 
-        if (!is_array($data)) {
+        if (
+            !is_array($data)
+        ) {
             throw new \RuntimeException(
                 'CSGO Trader ha devuelto un JSON inválido.'
+                . ' HTTP: '
+                . $httpCode
+                . (
+                    $contentType
+                        ? ' | Content-Type: '
+                            . $contentType
+                        : ''
+                )
             );
         }
 
@@ -282,7 +340,7 @@ class PriceService
     }
 
     /**
-     * Normaliza un precio.
+     * Normaliza el precio.
      */
     private function normalizePrice(
         mixed $price
@@ -303,7 +361,9 @@ class PriceService
         $price =
             (float) $price;
 
-        if ($price < 0) {
+        if (
+            $price < 0
+        ) {
             return null;
         }
 

@@ -1,5 +1,9 @@
 /vendor/
 /.env
+
+/storage/*.json
+
 /.idea/
 /.vscode/
+
 .DS_Store

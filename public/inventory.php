@@ -9,8 +9,13 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use CS2\Steam\SteamInventory;
 use CS2\Pricing\PriceService;
 
-if (!isset($_SESSION['steamid'])) {
-    header('Location: index.php');
+if (
+    !isset($_SESSION['steamid'])
+) {
+    header(
+        'Location: index.php'
+    );
+
     exit;
 }
 
@@ -24,39 +29,50 @@ $items = [];
 $total = 0.0;
 
 try {
-
     /*
-     * Obtener inventario de Steam.
+     * 1. INVENTARIO
+     *
+     * El inventario se obtiene
+     * directamente desde Steam.
      */
     $inventoryService =
         new SteamInventory();
 
     $items =
         $inventoryService
-            ->getInventory($steamId);
+            ->getInventory(
+                $steamId
+            );
 
     /*
-     * Obtener precios de CSGO Trader.
+     * 2. PRECIOS
+     *
+     * CSGO Trader solamente proporciona
+     * los precios de los objetos.
      */
     $priceService =
         new PriceService();
 
     $items =
         $priceService
-            ->addPrices($items);
+            ->addPrices(
+                $items
+            );
 
     /*
-     * Calcular valor total.
+     * 3. VALOR TOTAL
      */
     $total =
         $priceService
-            ->calculateTotal($items);
+            ->calculateTotal(
+                $items
+            );
 
-} catch (Throwable $e) {
-
+} catch (
+    Throwable $e
+) {
     $error =
         $e->getMessage();
-
 }
 
 ?>
@@ -109,7 +125,9 @@ try {
         <div class="error">
 
             <?= htmlspecialchars(
-                $error
+                $error,
+                ENT_QUOTES,
+                'UTF-8'
             ) ?>
 
         </div>
@@ -155,7 +173,9 @@ try {
 
         <section class="inventory">
 
-            <?php if (empty($items)): ?>
+            <?php if (
+                empty($items)
+            ): ?>
 
                 <p>
                     No se encontraron objetos.
@@ -177,7 +197,9 @@ try {
 
                             <img
                                 src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
-                                    $item['icon_url']
+                                    $item['icon_url'],
+                                    ENT_QUOTES,
+                                    'UTF-8'
                                 ) ?>/128fx128f"
                                 alt=""
                                 loading="lazy"
@@ -191,6 +213,9 @@ try {
 
                                 <?= htmlspecialchars(
                                     $item['name']
+                                    ?? 'Objeto desconocido',
+                                    ENT_QUOTES,
+                                    'UTF-8'
                                 ) ?>
 
                             </h3>
@@ -199,7 +224,9 @@ try {
 
                                 <?= htmlspecialchars(
                                     $item['market_hash_name']
-                                    ?? ''
+                                    ?? '',
+                                    ENT_QUOTES,
+                                    'UTF-8'
                                 ) ?>
 
                             </small>
@@ -209,12 +236,14 @@ try {
                         <div class="item-price">
 
                             <?php if (
-                                $item['price']
-                                !== null
+                                isset(
+                                    $item['price']
+                                ) &&
+                                $item['price'] !== null
                             ): ?>
 
                                 <?= number_format(
-                                    $item['price'],
+                                    (float) $item['price'],
                                     2,
                                     ',',
                                     '.'
@@ -241,6 +270,8 @@ try {
     <?php endif; ?>
 
 </main>
+
+<script src="js/app.js"></script>
 
 </body>
 
