@@ -10,7 +10,7 @@ class PriceUpdater
         'https://prices.csgotrader.app/latest/';
 
     private const EXCHANGE_RATES_URL =
-        'https://prices.csgotrader.app/latest/exchange_rates.json';
+        'https://api.frankfurter.app/latest?from=USD&to=EUR';
 
     /**
      * Los feeds de CSGO Trader están expresados principalmente
@@ -321,78 +321,31 @@ class PriceUpdater
     private function getUsdToEurRate(
         array $data
     ): float {
-        /*
-         * Formato:
-         * {
-         *   "EUR": 0.85
-         * }
-         */
-        if (
-            isset($data['EUR'])
-            && is_numeric($data['EUR'])
-            && (float) $data['EUR'] > 0
-        ) {
-            return (float) $data['EUR'];
-        }
+    /*
+     * Frankfurter devuelve:
+     *
+     * {
+     *     "amount": 1,
+     *     "base": "USD",
+     *     "date": "...",
+     *     "rates": {
+     *         "EUR": 0.85
+     *     }
+     * }
+     */
 
-        /*
-         * Formato:
-         * {
-         *   "rates": {
-         *       "EUR": 0.85
-         *   }
-         * }
-         */
-        if (
-            isset($data['rates']['EUR'])
-            && is_numeric(
-                $data['rates']['EUR']
-            )
-            && (float) $data['rates']['EUR'] > 0
-        ) {
-            return (float)
-                $data['rates']['EUR'];
-        }
-
-        /*
-         * Formato:
-         * {
-         *   "USD": {
-         *       "EUR": 0.85
-         *   }
-         * }
-         */
-        if (
-            isset($data['USD']['EUR'])
-            && is_numeric(
-                $data['USD']['EUR']
-            )
-            && (float) $data['USD']['EUR'] > 0
-        ) {
-            return (float)
-                $data['USD']['EUR'];
-        }
-
-        /*
-         * Si el feed está expresado al revés:
-         *
-         * EUR -> USD
-         */
-        if (
-            isset($data['EUR']['USD'])
-            && is_numeric(
-                $data['EUR']['USD']
-            )
-            && (float) $data['EUR']['USD'] > 0
-        ) {
-            return 1 /
-                (float) $data['EUR']['USD'];
-        }
-
-        throw new \RuntimeException(
-            'No se ha podido encontrar el cambio USD -> EUR.'
-        );
+    if (
+        isset($data['rates']['EUR'])
+        && is_numeric($data['rates']['EUR'])
+        && (float) $data['rates']['EUR'] > 0
+    ) {
+        return (float) $data['rates']['EUR'];
     }
+
+    throw new \RuntimeException(
+        'No se ha podido obtener el cambio USD -> EUR.'
+            );
+        }
 
     /**
      * Extrae los precios de un proveedor.
