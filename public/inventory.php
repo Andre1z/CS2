@@ -157,7 +157,7 @@ try {
 
                     <?= number_format(
                         $total,
-                        2,
+                        0,
                         ',',
                         '.'
                     ) ?>
