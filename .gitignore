@@ -1,9 +1,8 @@
 /vendor/
 /.env
 
-/storage/*.json
+/storage/prices/*.json
 
 /.idea/
 /.vscode/
-
 .DS_Store
