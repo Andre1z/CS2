@@ -6,42 +6,29 @@ namespace CS2\Pricing;
 
 class PriceUpdater
 {
-    /**
-     * URL base de los feeds de precios de CSGO Trader.
-     */
     private const BASE_URL =
         'https://prices.csgotrader.app/latest/';
 
-    /**
-     * Feed oficial de tipos de cambio.
-     *
-     * CSGO Trader utiliza este archivo para convertir
-     * sus precios a la moneda seleccionada.
-     */
     private const EXCHANGE_RATES_URL =
-        self::BASE_URL . 'exchange_rates.json';
+        'https://prices.csgotrader.app/latest/exchange_rates.json';
 
     /**
-     * Moneda base de los feeds de precios.
-     *
-     * La extensión de CSGO Trader utiliza USD como
-     * referencia y después aplica el exchange rate.
+     * Los feeds de CSGO Trader están expresados principalmente
+     * en USD. Nosotros convertimos todo a EUR.
      */
-    private const BASE_CURRENCY = 'USD';
+    private const SOURCE_CURRENCY = 'USD';
 
-    /**
-     * Moneda que utilizaremos en nuestra aplicación.
-     */
     private const TARGET_CURRENCY = 'EUR';
 
     /**
-     * Proveedores que utilizaremos para calcular
-     * nuestro precio estimado.
+     * Proveedores disponibles en los feeds de CSGO Trader.
      *
-     * Todos ellos forman parte del sistema de
-     * pricing utilizado por CSGO Trader.
+     * Si alguno no está disponible, se ignora y se utiliza
+     * la caché anterior si existe.
      */
     private const PROVIDERS = [
+        'steam',
+        'skinport',
         'csgotrader',
         'csmoney',
         'cstrade',
@@ -50,168 +37,83 @@ class PriceUpdater
         'csgotm',
         'csgoempire',
         'swapgg',
-        'skinport',
         'buff163',
-        'csfloat'
+        'youpin898',
+        'csfloat',
+        'c5game',
     ];
-
-    /**
-     * Para proveedores que tienen varios modos,
-     * elegimos el modo más apropiado para nuestro
-     * objetivo.
-     *
-     * En general preferimos "starting_at" cuando
-     * representa el precio de entrada al mercado.
-     */
-    private const PROVIDER_MODES = [
-        'csgotrader' => 'csgotrader',
-
-        'csmoney' => 'csmoney',
-
-        'cstrade' => 'cstrade',
-
-        'lisskins' => 'lisskins',
-
-        'lootfarm' => 'lootfarm',
-
-        'csgotm' => 'csgotm',
-
-        'csgoempire' => 'csgoempire',
-
-        'swapgg' => 'swapgg',
-
-        'skinport' => 'starting_at',
-
-        'buff163' => 'starting_at',
-
-        'csfloat' => 'starting_at'
-    ];
-
-    /**
-     * Número mínimo de precios necesarios para
-     * aplicar el filtro de outliers.
-     */
-    private const MIN_VALUES_FOR_OUTLIER_FILTER = 5;
-
-    /**
-     * Timeout de las peticiones.
-     */
-    private const REQUEST_TIMEOUT = 30;
-
-    private const CONNECT_TIMEOUT = 10;
 
     private PriceCache $cache;
 
     public function __construct()
     {
-        $this->cache =
-            new PriceCache();
+        $this->cache = new PriceCache();
     }
 
-    /**
-     * Actualiza todos los proveedores y reconstruye
-     * el precio medio de cada objeto.
-     *
-     * @return array{
-     *     version: string,
-     *     updated_at: int,
-     *     currency: string,
-     *     providers: array<int, string>,
-     *     failed_providers: array<int, string>,
-     *     items: int
-     * }
-     */
     public function update(): array
     {
-        /*
-         * 1. Obtener tipos de cambio.
-         */
         $exchangeRates =
-            $this->downloadExchangeRates();
+            $this->getExchangeRates();
 
-        $eurRate =
-            $this->getTargetExchangeRate(
+        $usdToEur =
+            $this->getUsdToEurRate(
                 $exchangeRates
             );
 
-        /*
-         * 2. Descargar y normalizar proveedores.
-         */
-        $allProviderPrices = [];
+        $allPrices = [];
 
-        $successfulProviders = [];
+        $updatedProviders = [];
 
-        $failedProviders = [];
-
-        foreach (
-            self::PROVIDERS as $provider
-        ) {
+        foreach (self::PROVIDERS as $provider) {
             try {
-                $rawPrices =
-                    $this->downloadProvider(
-                        $provider
+                $data =
+                    $this->downloadJson(
+                        self::BASE_URL
+                        . $provider
+                        . '.json'
                     );
 
-                $normalizedPrices =
-                    $this->normalizeProvider(
-                        $provider,
-                        $rawPrices
-                    );
-
-                if (
-                    empty($normalizedPrices)
-                ) {
+                if (!is_array($data)) {
                     throw new \RuntimeException(
-                        'El proveedor no contiene precios válidos.'
+                        'Respuesta inválida.'
                     );
                 }
 
-                /*
-                 * Convertimos los precios de USD a EUR.
-                 */
-                $eurPrices =
-                    $this->convertPricesToEur(
-                        $normalizedPrices,
-                        $eurRate
-                    );
-
-                /*
-                 * Guardamos el proveedor ya normalizado
-                 * y convertido a EUR.
-                 */
-                $this->cache
-                    ->saveProviderPrices(
-                        $provider,
-                        $eurPrices
-                    );
-
-                $allProviderPrices[$provider] =
-                    $eurPrices;
-
-                $successfulProviders[] =
-                    $provider;
-
-            } catch (
-                \Throwable $e
-            ) {
-                $failedProviders[] =
-                    $provider;
-
-                error_log(
-                    sprintf(
-                        '[PriceUpdater] Error en %s: %s',
-                        $provider,
-                        $e->getMessage()
-                    )
+                $this->cache->saveProviderPrices(
+                    $provider,
+                    $data
                 );
 
+                $providerPrices =
+                    $this->extractProviderPrices(
+                        $provider,
+                        $data,
+                        $usdToEur
+                    );
+
+                foreach (
+                    $providerPrices as $marketHashName => $price
+                ) {
+                    if ($price <= 0) {
+                        continue;
+                    }
+
+                    $allPrices[
+                        $marketHashName
+                    ][] = [
+                        'provider' => $provider,
+                        'price' => $price
+                    ];
+                }
+
+                $updatedProviders[] =
+                    $provider;
+
+            } catch (\Throwable $e) {
+
                 /*
-                 * MUY IMPORTANTE:
-                 *
-                 * Si un proveedor falla no borramos
-                 * su caché anterior.
-                 *
-                 * Podemos utilizarla como fallback.
+                 * Si un proveedor falla, utilizamos
+                 * la última versión guardada.
                  */
                 $cached =
                     $this->cache
@@ -221,252 +123,132 @@ class PriceUpdater
 
                 if (
                     !empty($cached)
+                    && is_array($cached)
                 ) {
-                    $allProviderPrices[$provider] =
-                        $cached;
+                    $providerPrices =
+                        $this->extractProviderPrices(
+                            $provider,
+                            $cached,
+                            $usdToEur
+                        );
 
-                    $successfulProviders[] =
-                        $provider;
+                    foreach (
+                        $providerPrices
+                        as $marketHashName => $price
+                    ) {
+                        if ($price <= 0) {
+                            continue;
+                        }
+
+                        $allPrices[
+                            $marketHashName
+                        ][] = [
+                            'provider' => $provider,
+                            'price' => $price
+                        ];
+                    }
+
+                    $updatedProviders[] =
+                        $provider . ' (cache)';
                 }
             }
         }
 
-        /*
-         * No continuamos si no tenemos ningún proveedor.
-         */
-        if (
-            empty($allProviderPrices)
+        $calculated = [];
+
+        foreach (
+            $allPrices as $marketHashName => $entries
         ) {
-            throw new \RuntimeException(
-                'No se pudo obtener ningún proveedor de precios.'
-            );
+            $result =
+                $this->calculateReasonablePrice(
+                    $entries
+                );
+
+            if ($result === null) {
+                continue;
+            }
+
+            $calculated[
+                $marketHashName
+            ] = $result;
         }
 
         /*
-         * 3. Calcular precio medio.
+         * Ordenamos para que el JSON sea estable.
+         * Así la versión solamente cambia cuando
+         * realmente cambian los precios.
          */
-        $calculatedPrices =
-            $this->calculateAverages(
-                $allProviderPrices
-            );
+        ksort($calculated);
 
-        /*
-         * 4. Guardar precios calculados.
-         */
         $this->cache
             ->saveCalculatedPrices(
-                $calculatedPrices
+                $calculated
             );
 
-        /*
-         * 5. Generar versión.
-         *
-         * Si los precios no han cambiado,
-         * la versión tampoco cambiará.
-         */
         $version =
-            $this->generateVersion(
-                $calculatedPrices
+            hash(
+                'sha256',
+                json_encode(
+                    $calculated,
+                    JSON_UNESCAPED_UNICODE
+                    | JSON_UNESCAPED_SLASHES
+                )
             );
 
-        $updatedAt =
-            time();
-
-        /*
-         * 6. Guardar metadata.
-         */
         $this->cache
             ->saveMetadata([
                 'version' =>
                     $version,
 
                 'updated_at' =>
-                    $updatedAt,
+                    time(),
 
                 'currency' =>
                     self::TARGET_CURRENCY,
 
-                'base_currency' =>
-                    self::BASE_CURRENCY,
-
-                'exchange_rate' =>
-                    $eurRate,
-
                 'providers' =>
-                    $successfulProviders,
+                    $updatedProviders,
 
-                'failed_providers' =>
-                    array_values(
-                        array_unique(
-                            $failedProviders
-                        )
-                    ),
-
-                'items' =>
-                    count(
-                        $calculatedPrices
-                    )
+                'algorithm' =>
+                    'reasonable-median-v2'
             ]);
 
         return [
             'version' =>
                 $version,
 
-            'updated_at' =>
-                $updatedAt,
-
-            'currency' =>
-                self::TARGET_CURRENCY,
-
             'providers' =>
-                $successfulProviders,
-
-            'failed_providers' =>
-                array_values(
-                    array_unique(
-                        $failedProviders
-                    )
-                ),
+                $updatedProviders,
 
             'items' =>
-                count(
-                    $calculatedPrices
-                )
+                count($calculated)
         ];
     }
 
     /**
-     * Descarga los tipos de cambio de CSGO Trader.
-     *
-     * La respuesta esperada es algo equivalente a:
-     *
-     * {
-     *     "USD": 1,
-     *     "EUR": 0.85,
-     *     "GBP": 0.74,
-     *     ...
-     * }
-     */
-    private function downloadExchangeRates(): array
-    {
-        $data =
-            $this->downloadJson(
-                self::EXCHANGE_RATES_URL
-            );
-
-        if (
-            empty($data)
-        ) {
-            throw new \RuntimeException(
-                'CSGO Trader no ha devuelto tipos de cambio.'
-            );
-        }
-
-        return $data;
-    }
-
-    /**
-     * Obtiene el tipo USD -> EUR.
-     */
-    private function getTargetExchangeRate(
-        array $exchangeRates
-    ): float {
-        if (
-            !isset(
-                $exchangeRates[
-                    self::TARGET_CURRENCY
-                ]
-            )
-        ) {
-            throw new \RuntimeException(
-                'No existe un tipo de cambio para '
-                . self::TARGET_CURRENCY
-            );
-        }
-
-        $rate =
-            $exchangeRates[
-                self::TARGET_CURRENCY
-            ];
-
-        if (
-            !is_numeric($rate)
-        ) {
-            throw new \RuntimeException(
-                'El tipo de cambio EUR no es válido.'
-            );
-        }
-
-        $rate =
-            (float) $rate;
-
-        if (
-            $rate <= 0
-        ) {
-            throw new \RuntimeException(
-                'El tipo de cambio EUR debe ser mayor que cero.'
-            );
-        }
-
-        return $rate;
-    }
-
-    /**
-     * Descarga un proveedor concreto.
-     */
-    private function downloadProvider(
-        string $provider
-    ): array {
-        $url =
-            self::BASE_URL
-            . $provider
-            . '.json';
-
-        return $this->downloadJson(
-            $url
-        );
-    }
-
-    /**
-     * Descarga y decodifica JSON.
+     * Descarga JSON desde CSGO Trader.
      */
     private function downloadJson(
         string $url
     ): array {
         $ch =
-            curl_init(
-                $url
-            );
-
-        if (
-            $ch === false
-        ) {
-            throw new \RuntimeException(
-                'No se pudo inicializar CURL.'
-            );
-        }
+            curl_init($url);
 
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER =>
                 true,
 
+            CURLOPT_TIMEOUT =>
+                30,
+
+            CURLOPT_CONNECTTIMEOUT =>
+                10,
+
             CURLOPT_FOLLOWLOCATION =>
                 true,
 
-            CURLOPT_TIMEOUT =>
-                self::REQUEST_TIMEOUT,
-
-            CURLOPT_CONNECTTIMEOUT =>
-                self::CONNECT_TIMEOUT,
-
             CURLOPT_SSL_VERIFYPEER =>
                 true,
-
-            CURLOPT_SSL_VERIFYHOST =>
-                2,
-
-            CURLOPT_ENCODING =>
-                '',
 
             CURLOPT_HTTPHEADER => [
                 'Accept: application/json'
@@ -480,34 +262,24 @@ class PriceUpdater
             curl_exec($ch);
 
         $httpCode =
-            (int) curl_getinfo(
+            curl_getinfo(
                 $ch,
                 CURLINFO_HTTP_CODE
             );
 
-        $contentType =
-            curl_getinfo(
-                $ch,
-                CURLINFO_CONTENT_TYPE
-            );
-
-        $curlError =
+        $error =
             curl_error($ch);
 
         curl_close($ch);
 
-        if (
-            $response === false
-        ) {
+        if ($response === false) {
             throw new \RuntimeException(
-                'CURL error: '
-                . $curlError
+                'Error CURL: '
+                . $error
             );
         }
 
-        if (
-            $httpCode !== 200
-        ) {
+        if ($httpCode !== 200) {
             throw new \RuntimeException(
                 'HTTP '
                 . $httpCode
@@ -522,17 +294,10 @@ class PriceUpdater
                 true
             );
 
-        if (
-            !is_array($data)
-        ) {
+        if (!is_array($data)) {
             throw new \RuntimeException(
-                'Respuesta JSON inválida.'
-                . (
-                    $contentType
-                        ? ' Content-Type: '
-                            . $contentType
-                        : ''
-                )
+                'JSON inválido recibido desde '
+                . $url
             );
         }
 
@@ -540,542 +305,560 @@ class PriceUpdater
     }
 
     /**
-     * Normaliza el formato de los diferentes
-     * proveedores a:
-     *
-     * [
-     *     "AK-47 | Redline (Field-Tested)" => 50.25
-     * ]
+     * Obtiene los tipos de cambio.
      */
-    private function normalizeProvider(
-        string $provider,
+    private function getExchangeRates(): array
+    {
+        return $this->downloadJson(
+            self::EXCHANGE_RATES_URL
+        );
+    }
+
+    /**
+     * Obtiene USD -> EUR intentando soportar
+     * las diferentes estructuras posibles del feed.
+     */
+    private function getUsdToEurRate(
         array $data
+    ): float {
+        /*
+         * Formato:
+         * {
+         *   "EUR": 0.85
+         * }
+         */
+        if (
+            isset($data['EUR'])
+            && is_numeric($data['EUR'])
+            && (float) $data['EUR'] > 0
+        ) {
+            return (float) $data['EUR'];
+        }
+
+        /*
+         * Formato:
+         * {
+         *   "rates": {
+         *       "EUR": 0.85
+         *   }
+         * }
+         */
+        if (
+            isset($data['rates']['EUR'])
+            && is_numeric(
+                $data['rates']['EUR']
+            )
+            && (float) $data['rates']['EUR'] > 0
+        ) {
+            return (float)
+                $data['rates']['EUR'];
+        }
+
+        /*
+         * Formato:
+         * {
+         *   "USD": {
+         *       "EUR": 0.85
+         *   }
+         * }
+         */
+        if (
+            isset($data['USD']['EUR'])
+            && is_numeric(
+                $data['USD']['EUR']
+            )
+            && (float) $data['USD']['EUR'] > 0
+        ) {
+            return (float)
+                $data['USD']['EUR'];
+        }
+
+        /*
+         * Si el feed está expresado al revés:
+         *
+         * EUR -> USD
+         */
+        if (
+            isset($data['EUR']['USD'])
+            && is_numeric(
+                $data['EUR']['USD']
+            )
+            && (float) $data['EUR']['USD'] > 0
+        ) {
+            return 1 /
+                (float) $data['EUR']['USD'];
+        }
+
+        throw new \RuntimeException(
+            'No se ha podido encontrar el cambio USD -> EUR.'
+        );
+    }
+
+    /**
+     * Extrae los precios de un proveedor.
+     */
+    private function extractProviderPrices(
+        string $provider,
+        array $data,
+        float $usdToEur
     ): array {
         $result = [];
 
         foreach (
-            $data as $marketHashName => $value
+            $data as $marketHashName => $entry
         ) {
-            $price =
-                $this->extractPrice(
-                    $provider,
-                    $value
-                );
-
             if (
-                $price === null
+                !is_string($marketHashName)
+                || $marketHashName === ''
             ) {
                 continue;
             }
 
+            $price =
+                $this->extractPriceFromEntry(
+                    $provider,
+                    $entry
+                );
+
+            if ($price === null) {
+                continue;
+            }
+
+            /*
+             * Los feeds pueden contener precios
+             * en USD. Los convertimos a EUR.
+             */
+            $price *= $usdToEur;
+
             if (
-                $price < 0
+                !is_finite($price)
+                || $price <= 0
             ) {
                 continue;
             }
 
             /*
-             * Evitamos precios absurdamente pequeños
-             * que normalmente indican datos corruptos.
+             * Evitamos errores absurdos del feed.
              */
-            if (
-                $price === 0
-            ) {
+            if ($price > 1000000) {
                 continue;
             }
 
             $result[
-                (string) $marketHashName
-            ] =
-                $price;
+                $marketHashName
+            ] = round(
+                $price,
+                4
+            );
         }
 
         return $result;
     }
 
     /**
-     * Extrae el precio dependiendo del formato
-     * del proveedor.
+     * Extrae un precio de las distintas estructuras
+     * que utiliza CSGO Trader.
      */
-    private function extractPrice(
+    private function extractPriceFromEntry(
         string $provider,
-        mixed $value
+        mixed $entry
     ): ?float {
-        /*
-         * Proveedores con:
-         *
-         * {
-         *     "Item": {
-         *         "price": 123
-         *     }
-         * }
-         */
-        if (
-            in_array(
-                $provider,
-                [
-                    'csgotrader',
-                    'csmoney',
-                    'cstrade',
-                    'lisskins'
-                ],
-                true
-            )
-        ) {
-            if (
-                !is_array($value)
-            ) {
-                return null;
-            }
+        if (is_numeric($entry)) {
+            $value =
+                (float) $entry;
 
-            if (
-                !isset(
-                    $value['price']
-                )
-            ) {
-                return null;
-            }
-
-            if (
-                !is_numeric(
-                    $value['price']
-                )
-            ) {
-                return null;
-            }
-
-            return
-                (float)
-                $value['price'];
+            return $value > 0
+                ? $value
+                : null;
         }
 
-        /*
-         * Proveedores cuyo formato es:
-         *
-         * {
-         *     "Item": 123
-         * }
-         */
-        if (
-            in_array(
-                $provider,
-                [
-                    'lootfarm',
-                    'csgotm',
-                    'csgoempire',
-                    'swapgg'
-                ],
-                true
-            )
-        ) {
-            if (
-                !is_numeric($value)
-            ) {
-                return null;
-            }
-
-            return
-                (float)
-                $value;
-        }
-
-        /*
-         * Skinport / BUFF / CSFloat:
-         *
-         * {
-         *     "Item": {
-         *         "starting_at": {
-         *             "price": 123
-         *         }
-         *     }
-         * }
-         *
-         * o variantes similares dependiendo
-         * del proveedor.
-         */
-        if (
-            in_array(
-                $provider,
-                [
-                    'skinport',
-                    'buff163',
-                    'csfloat'
-                ],
-                true
-            )
-        ) {
-            return $this->extractModePrice(
-                $value,
-                self::PROVIDER_MODES[
-                    $provider
-                ]
-                ?? 'starting_at'
-            );
-        }
-
-        return null;
-    }
-
-    /**
-     * Extrae un precio de un modo concreto.
-     *
-     * Soporta varios formatos para evitar que
-     * un pequeño cambio en el JSON rompa todo
-     * el actualizador.
-     */
-    private function extractModePrice(
-        mixed $value,
-        string $mode
-    ): ?float {
-        if (
-            !is_array($value)
-        ) {
+        if (!is_array($entry)) {
             return null;
         }
 
         /*
-         * Formato:
+         * Proveedores que directamente utilizan:
          *
          * {
+         *   "price": 123
+         * }
+         */
+        if (
+            isset($entry['price'])
+            && is_numeric($entry['price'])
+        ) {
+            $value =
+                (float) $entry['price'];
+
+            if ($value > 0) {
+                return $value;
+            }
+        }
+
+        /*
+         * steam / skinport / buff / csfloat
+         *
+         * {
+         *   "starting_at": {
+         *       "price": 123
+         *   }
+         * }
+         */
+        $preferredKeys = [
+            'starting_at',
+            'lowest',
+            'lowest_price',
+            'median',
+            'average',
+            'avg'
+        ];
+
+        foreach (
+            $preferredKeys as $key
+        ) {
+            if (
+                !array_key_exists(
+                    $key,
+                    $entry
+                )
+            ) {
+                continue;
+            }
+
+            $value =
+                $this->extractNumericValue(
+                    $entry[$key]
+                );
+
+            if (
+                $value !== null
+                && $value > 0
+            ) {
+                return $value;
+            }
+        }
+
+        /*
+         * Algunos feeds contienen estructuras
+         * como:
+         *
+         * "steam": {
          *     "starting_at": {
          *         "price": 123
          *     }
          * }
          */
-        if (
-            isset(
-                $value[$mode]
-            )
-            &&
-            is_array(
-                $value[$mode]
-            )
-            &&
-            isset(
-                $value[$mode]['price']
-            )
-            &&
-            is_numeric(
-                $value[$mode]['price']
-            )
+        foreach (
+            $entry as $value
         ) {
-            return
-                (float)
-                $value[$mode]['price'];
-        }
+            if (!is_array($value)) {
+                continue;
+            }
 
-        /*
-         * Formato:
-         *
-         * {
-         *     "starting_at": 123
-         * }
-         */
-        if (
-            isset(
-                $value[$mode]
-            )
-            &&
-            is_numeric(
-                $value[$mode]
-            )
-        ) {
-            return
-                (float)
-                $value[$mode];
-        }
+            $price =
+                $this->extractNumericValue(
+                    $value
+                );
 
-        /*
-         * Algunas estructuras pueden exponer
-         * directamente "price".
-         */
-        if (
-            isset(
-                $value['price']
-            )
-            &&
-            is_numeric(
-                $value['price']
-            )
-        ) {
-            return
-                (float)
-                $value['price'];
+            if (
+                $price !== null
+                && $price > 0
+            ) {
+                return $price;
+            }
         }
 
         return null;
     }
 
     /**
-     * Convierte todos los precios de USD a EUR.
+     * Busca un número dentro de una estructura de precio.
      */
-    private function convertPricesToEur(
-        array $prices,
-        float $eurRate
-    ): array {
-        $result = [];
+    private function extractNumericValue(
+        mixed $value
+    ): ?float {
+        if (is_numeric($value)) {
+            $number =
+                (float) $value;
 
-        foreach (
-            $prices as $marketHashName => $price
+            return $number > 0
+                ? $number
+                : null;
+        }
+
+        if (!is_array($value)) {
+            return null;
+        }
+
+        if (
+            isset($value['price'])
+            && is_numeric($value['price'])
         ) {
+            $number =
+                (float) $value['price'];
+
+            return $number > 0
+                ? $number
+                : null;
+        }
+
+        if (
+            isset($value['value'])
+            && is_numeric($value['value'])
+        ) {
+            $number =
+                (float) $value['value'];
+
+            return $number > 0
+                ? $number
+                : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Calcula el precio "razonable".
+     *
+     * No utilizamos una media simple porque los mercados
+     * baratos pueden arrastrar demasiado el resultado.
+     *
+     * Algoritmo:
+     *
+     * 1. Ordenamos los precios.
+     * 2. Calculamos la mediana.
+     * 3. Eliminamos precios que estén muy alejados
+     *    de esa mediana.
+     * 4. Volvemos a calcular la mediana.
+     *
+     * Resultado:
+     * un precio central del mercado.
+     */
+    private function calculateReasonablePrice(
+        array $entries
+    ): ?array {
+        $values = [];
+
+        foreach ($entries as $entry) {
             if (
-                !is_numeric($price)
+                !isset($entry['price'])
+                || !is_numeric($entry['price'])
             ) {
                 continue;
             }
 
             $price =
-                (float) $price;
+                (float) $entry['price'];
 
-            $result[
-                $marketHashName
-            ] =
-                round(
-                    $price * $eurRate,
-                    4
-                );
+            if (
+                $price > 0
+                && is_finite($price)
+            ) {
+                $values[] =
+                    $price;
+            }
         }
 
-        return $result;
-    }
+        if (empty($values)) {
+            return null;
+        }
 
-    /**
-     * Calcula el precio estimado de cada objeto.
-     */
-    private function calculateAverages(
-        array $providerPrices
-    ): array {
+        sort($values, SORT_NUMERIC);
+
+        $totalSources =
+            count($values);
+
+        $rawMin =
+            min($values);
+
+        $rawMax =
+            max($values);
+
         /*
-         * Transformamos:
-         *
-         * proveedor -> item -> precio
-         *
-         * en:
-         *
-         * item -> proveedor -> precio
+         * Con una sola fuente no hay forma de hacer
+         * una comparación entre mercados.
          */
-        $items = [];
+        if ($totalSources === 1) {
+            $reasonableValues =
+                $values;
+        } else {
+            $median =
+                $this->median($values);
 
-        foreach (
-            $providerPrices as $provider => $prices
-        ) {
-            foreach (
-                $prices as $marketHashName => $price
-            ) {
+            /*
+             * Permitimos un rango amplio alrededor
+             * de la mediana.
+             *
+             * 0.60 = no aceptar precios < 60% de la mediana.
+             * 1.60 = no aceptar precios > 160% de la mediana.
+             *
+             * Esto elimina auténticos outliers sin
+             * cargarnos diferencias normales entre mercados.
+             */
+            $lowerLimit =
+                $median * 0.60;
+
+            $upperLimit =
+                $median * 1.60;
+
+            $reasonableValues = [];
+
+            foreach ($values as $value) {
                 if (
-                    !isset(
-                        $items[$marketHashName]
-                    )
+                    $value >= $lowerLimit
+                    && $value <= $upperLimit
                 ) {
-                    $items[$marketHashName] = [];
+                    $reasonableValues[] =
+                        $value;
                 }
+            }
 
-                $items[
-                    $marketHashName
-                ][$provider] =
-                    (float) $price;
+            /*
+             * Si el filtro fuera demasiado agresivo,
+             * recuperamos todos los valores.
+             */
+            if (
+                count($reasonableValues) < 2
+            ) {
+                $reasonableValues =
+                    $values;
+            }
+
+            sort(
+                $reasonableValues,
+                SORT_NUMERIC
+            );
+        }
+
+        /*
+         * La mediana es nuestro precio final.
+         *
+         * Esto es intencionado:
+         *
+         * 50 €
+         * 80 €
+         * 95 €
+         * 100 €
+         * 500 €
+         *
+         * -> 95 €
+         *
+         * Los extremos no dominan el precio.
+         */
+        $reasonablePrice =
+            $this->median(
+                $reasonableValues
+            );
+
+        $reasonableMin =
+            min($reasonableValues);
+
+        $reasonableMax =
+            max($reasonableValues);
+
+        $providers = [];
+
+        foreach ($entries as $entry) {
+            if (
+                isset($entry['provider'])
+            ) {
+                $providers[] =
+                    $entry['provider'];
             }
         }
 
-        $result = [];
+        $providers =
+            array_values(
+                array_unique($providers)
+            );
 
-        foreach (
-            $items as $marketHashName => $marketPrices
-        ) {
-            if (
-                empty($marketPrices)
-            ) {
-                continue;
-            }
-
-            $values =
-                array_values(
-                    $marketPrices
-                );
-
+        return [
             /*
-             * Eliminamos valores extremos.
+             * Mantenemos "average" porque PriceService
+             * y el frontend ya utilizan este campo.
              */
-            $filteredValues =
-                $this->removeOutliers(
-                    $values
-                );
+            'average' =>
+                round(
+                    $reasonablePrice,
+                    2
+                ),
 
-            if (
-                empty($filteredValues)
-            ) {
-                continue;
-            }
+            'median' =>
+                round(
+                    $reasonablePrice,
+                    2
+                ),
 
-            $average =
-                array_sum(
-                    $filteredValues
+            'min' =>
+                round(
+                    $reasonableMin,
+                    2
+                ),
+
+            'max' =>
+                round(
+                    $reasonableMax,
+                    2
+                ),
+
+            'count' =>
+                count($reasonableValues),
+
+            'total_sources' =>
+                $totalSources,
+
+            'providers' =>
+                $providers,
+
+            'prices' =>
+                array_map(
+                    static function (
+                        float $value
+                    ): float {
+                        return round(
+                            $value,
+                            2
+                        );
+                    },
+                    $reasonableValues
                 )
-                /
-                count(
-                    $filteredValues
-                );
-
-            /*
-             * Ordenamos para obtener min/max
-             * de los precios reales disponibles.
-             */
-            sort($values);
-
-            $result[
-                $marketHashName
-            ] = [
-                'average' =>
-                    round(
-                        $average,
-                        2
-                    ),
-
-                'min' =>
-                    round(
-                        min($values),
-                        2
-                    ),
-
-                'max' =>
-                    round(
-                        max($values),
-                        2
-                    ),
-
-                /*
-                 * Número de mercados utilizados
-                 * para calcular la media.
-                 */
-                'count' =>
-                    count(
-                        $filteredValues
-                    ),
-
-                /*
-                 * Número total de mercados
-                 * disponibles para este objeto.
-                 */
-                'total_sources' =>
-                    count(
-                        $values
-                    ),
-
-                /*
-                 * Precios individuales por mercado.
-                 */
-                'prices' =>
-                    $marketPrices
-            ];
-        }
-
-        return $result;
+        ];
     }
 
     /**
-     * Elimina valores extremos.
-     *
-     * Con menos de 5 proveedores:
-     *
-     *     utilizamos todos.
-     *
-     * Con 5 o más:
-     *
-     *     eliminamos el más bajo
-     *     y el más alto.
-     *
-     * Ejemplo:
-     *
-     * 90
-     * 95
-     * 98
-     * 100
-     * 105
-     * 1500
-     *
-     * queda:
-     *
-     * 95
-     * 98
-     * 100
-     * 105
+     * Mediana de una lista numérica.
      */
-    private function removeOutliers(
+    private function median(
         array $values
-    ): array {
-        $values =
-            array_values(
-                array_filter(
-                    $values,
-                    static function (
-                        mixed $value
-                    ): bool {
-                        return
-                            is_numeric($value)
-                            &&
-                            (float) $value > 0;
-                    }
-                )
-            );
+    ): float {
+        if (empty($values)) {
+            return 0.0;
+        }
+
+        sort(
+            $values,
+            SORT_NUMERIC
+        );
 
         $count =
             count($values);
 
-        if (
-            $count <
-            self::MIN_VALUES_FOR_OUTLIER_FILTER
-        ) {
-            return $values;
-        }
-
-        sort($values);
-
-        /*
-         * Eliminamos el menor y mayor precio.
-         */
-        array_shift($values);
-
-        array_pop($values);
-
-        return $values;
-    }
-
-    /**
-     * Genera una versión basada únicamente
-     * en los precios calculados.
-     *
-     * Si los precios no cambian:
-     *
-     *     versión = igual
-     *
-     * Si cambia cualquier precio:
-     *
-     *     versión = diferente
-     */
-    private function generateVersion(
-        array $prices
-    ): string {
-        $json =
-            json_encode(
-                $prices,
-                JSON_UNESCAPED_UNICODE
-                |
-                JSON_UNESCAPED_SLASHES
-                |
-                JSON_PRESERVE_ZERO_FRACTION
+        $middle =
+            intdiv(
+                $count,
+                2
             );
 
         if (
-            $json === false
+            $count % 2 === 0
         ) {
-            throw new \RuntimeException(
-                'No se pudo generar la versión de precios.'
-            );
+            return (
+                $values[$middle - 1]
+                + $values[$middle]
+            ) / 2;
         }
 
-        return hash(
-            'sha256',
-            $json
-        );
+        return
+            $values[$middle];
     }
 }
