@@ -16,6 +16,9 @@ class PriceService
             new PriceCache();
     }
 
+    /**
+     * Devuelve el precio calculado de una skin.
+     */
     public function getPrice(
         ?string $marketHashName
     ): ?float {
@@ -36,17 +39,26 @@ class PriceService
             return null;
         }
 
-        return
-            isset(
-                $prices[$marketHashName]['average']
+        if (
+            !isset(
+                $prices[
+                    $marketHashName
+                ]['average']
             )
-                ? (float)
-                    $prices[
-                        $marketHashName
-                    ]['average']
-                : null;
+        ) {
+            return null;
+        }
+
+        return
+            (float)
+            $prices[
+                $marketHashName
+            ]['average'];
     }
 
+    /**
+     * Devuelve todos los detalles del precio.
+     */
     public function getPriceDetails(
         ?string $marketHashName
     ): ?array {
@@ -66,6 +78,10 @@ class PriceService
             ?? null;
     }
 
+    /**
+     * Añade la información de precios a los objetos
+     * del inventario.
+     */
     public function addPrices(
         array $items
     ): array {
@@ -82,43 +98,69 @@ class PriceService
             $details =
                 $name !== null
                     ? (
-                        $prices[$name]
+                        $prices[
+                            $name
+                        ]
                         ?? null
                     )
                     : null;
 
+            /*
+             * Precio final de la skin.
+             */
             $item['price'] =
                 $details !== null
-                    ? (
-                        isset(
-                            $details['average']
-                        )
-                            ? (float)
-                                $details['average']
-                            : null
+                    && isset(
+                        $details['average']
                     )
-                    : null;
+                        ? (float)
+                            $details['average']
+                        : null;
 
+            /*
+             * Precio mínimo de los mercados
+             * que realmente participan.
+             */
             $item['price_min'] =
                 $details['min']
                 ?? null;
 
+            /*
+             * Precio máximo de los mercados
+             * que realmente participan.
+             */
             $item['price_max'] =
                 $details['max']
                 ?? null;
 
+            /*
+             * Número de mercados utilizados
+             * para calcular el precio.
+             *
+             * Máximo: 4.
+             */
             $item['price_count'] =
                 $details['count']
                 ?? 0;
 
+            /*
+             * Número total de fuentes encontradas
+             * antes de aplicar los filtros.
+             */
             $item['price_total_sources'] =
                 $details['total_sources']
                 ?? 0;
 
+            /*
+             * Precios individuales utilizados.
+             */
             $item['price_markets'] =
                 $details['prices']
                 ?? [];
 
+            /*
+             * Proveedores utilizados.
+             */
             $item['price_providers'] =
                 $details['providers']
                 ?? [];
@@ -133,8 +175,17 @@ class PriceService
      * Calcula el valor total del inventario.
      *
      * IMPORTANTE:
-     * El resultado se redondea deliberadamente
-     * a euros enteros.
+     *
+     * El total final SIEMPRE es un número entero.
+     *
+     * Ejemplos:
+     *
+     * 100.49 € -> 100 €
+     * 100.50 € -> 101 €
+     * 100.51 € -> 101 €
+     *
+     * Utilizamos PHP_ROUND_HALF_UP para que exactamente
+     * .50 se redondee hacia arriba.
      */
     public function calculateTotal(
         array $items
@@ -147,6 +198,7 @@ class PriceService
             if (
                 isset($item['price'])
                 && $item['price'] !== null
+                && is_numeric($item['price'])
             ) {
                 $total +=
                     (float)
@@ -155,14 +207,10 @@ class PriceService
         }
 
         /*
-         * Queremos:
+         * Redondeo a euros enteros.
          *
-         * 12.37 € -> 12 €
-         * 12.50 € -> 13 €
-         * 12.81 € -> 13 €
-         *
-         * PHP_ROUND_HALF_UP evita comportamientos
-         * extraños con el redondeo convencional.
+         * < 0.50 -> abajo
+         * >= 0.50 -> arriba
          */
         return (float) round(
             $total,
@@ -171,6 +219,9 @@ class PriceService
         );
     }
 
+    /**
+     * Devuelve la versión actual de precios.
+     */
     public function getVersion(): ?string
     {
         $metadata =
@@ -182,6 +233,10 @@ class PriceService
             ?? null;
     }
 
+    /**
+     * Devuelve cuándo se actualizaron
+     * los precios por última vez.
+     */
     public function getUpdatedAt(): ?int
     {
         $metadata =
@@ -189,12 +244,17 @@ class PriceService
                 ->getMetadata();
 
         return
-            isset($metadata['updated_at'])
+            isset(
+                $metadata['updated_at']
+            )
                 ? (int)
                     $metadata['updated_at']
                 : null;
     }
 
+    /**
+     * Carga los precios calculados desde la caché.
+     */
     private function getPrices(): array
     {
         if (
