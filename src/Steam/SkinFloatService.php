@@ -9,15 +9,22 @@ class SkinFloatService
     private const API_URL =
         'https://api.csgofloat.com/';
 
-    private const CACHE_DIRECTORY =
-        __DIR__ . '/../../storage/floats';
-
-    private const CACHE_TTL =
-        2592000;
+    private string $cacheDirectory;
 
     public function __construct()
     {
-        $this->ensureDirectory();
+        $this->cacheDirectory =
+            BASE_PATH . '/storage/floats';
+
+        if (
+            !is_dir($this->cacheDirectory)
+        ) {
+            mkdir(
+                $this->cacheDirectory,
+                0775,
+                true
+            );
+        }
     }
 
     public function getFloat(
@@ -27,198 +34,209 @@ class SkinFloatService
         $inspectUrl =
             trim($inspectUrl);
 
+        /*
+         * Steam puede devolver plantillas
+         * como:
+         *
+         * steam://run/730//+csgo_econ_action_preview%20%propid:6%
+         *
+         * No contienen los datos reales del objeto.
+         */
         if (
-            $inspectUrl === ''
+            $this->isInvalidTemplate(
+                $inspectUrl
+            )
         ) {
             return null;
         }
 
         if (
-            !str_starts_with(
-                $inspectUrl,
-                'steam://'
+            !$this->isInspectUrl(
+                $inspectUrl
             )
         ) {
-            throw new \RuntimeException(
-                'Inspect link inválido.'
-            );
+            return null;
         }
 
         /*
-         * Comprobamos que el link pertenece
-         * al usuario actual cuando usa
-         * el formato S + SteamID.
+         * Los inspect links clásicos contienen
+         * S + SteamID + A + assetid + D + ...
+         *
+         * Si existe S, comprobamos que pertenece
+         * al usuario de la sesión.
          */
-        $decoded =
-            urldecode(
-                $inspectUrl
-            );
-
         if (
             preg_match(
-                '/S(\d+)A/i',
-                $decoded,
+                '/S(\d{17})A\d+D/i',
+                $inspectUrl,
                 $matches
             )
         ) {
             if (
-                isset($matches[1])
-                &&
                 $matches[1] !== $steamId
             ) {
-                throw new \RuntimeException(
-                    'El inspect link no pertenece '
-                    . 'al usuario actual.'
-                );
+                return null;
             }
         }
 
-        $cacheFile =
-            $this->getCacheFile(
+        $cacheKey =
+            hash(
+                'sha256',
                 $inspectUrl
             );
 
+        $cacheFile =
+            $this->cacheDirectory
+            . '/'
+            . $cacheKey
+            . '.json';
+
+        /*
+         * Caché.
+         */
         if (
-            file_exists($cacheFile)
+            is_file($cacheFile)
         ) {
             $cached =
-                $this->readJson(
-                    $cacheFile
+                json_decode(
+                    (string) file_get_contents(
+                        $cacheFile
+                    ),
+                    true
                 );
 
             if (
                 is_array($cached)
                 &&
-                isset(
-                    $cached['float']
-                )
-                &&
-                is_numeric(
-                    $cached['float']
-                )
+                isset($cached['float'])
             ) {
-                $fetchedAt =
-                    (int) (
-                        $cached['fetched_at']
-                        ?? 0
-                    );
-
-                if (
-                    $fetchedAt > 0
-                    &&
-                    (
-                        time()
-                        - $fetchedAt
-                    ) < self::CACHE_TTL
-                ) {
-                    return $cached;
-                }
+                return $cached;
             }
         }
 
-        $data =
-            $this->request(
+        $result =
+            $this->requestFloat(
                 $inspectUrl
             );
 
         if (
-            !isset(
-                $data['iteminfo']
-            )
-            ||
-            !is_array(
-                $data['iteminfo']
-            )
+            $result === null
         ) {
             return null;
         }
 
-        $itemInfo =
-            $data['iteminfo'];
-
-        if (
-            !isset(
-                $itemInfo['floatvalue']
-            )
-            ||
-            !is_numeric(
-                $itemInfo['floatvalue']
-            )
-        ) {
-            return null;
-        }
-
-        $result = [
-            'float' =>
-                (float)
-                $itemInfo['floatvalue'],
-
-            'paint_seed' =>
-                isset(
-                    $itemInfo['paintseed']
-                )
-                    ? (int)
-                        $itemInfo['paintseed']
-                    : null,
-
-            'wear_name' =>
-                $itemInfo['wear_name']
-                ?? null,
-
-            'weapon_type' =>
-                $itemInfo['weapon_type']
-                ?? null,
-
-            'item_name' =>
-                $itemInfo['item_name']
-                ?? null,
-
-            'fetched_at' =>
-                time()
-        ];
-
-        $this->writeJson(
+        file_put_contents(
             $cacheFile,
-            $result
+            json_encode(
+                $result,
+                JSON_PRETTY_PRINT
+                | JSON_UNESCAPED_UNICODE
+            ),
+            LOCK_EX
         );
 
         return $result;
     }
 
-    private function request(
-        string $inspectUrl
-    ): array {
-        $url =
-            self::API_URL
-            . '?url='
-            . rawurlencode(
-                $inspectUrl
-            );
+    private function isInvalidTemplate(
+        string $url
+    ): bool {
+        if ($url === '') {
+            return true;
+        }
 
+        /*
+         * Plantillas que Steam deja sin resolver.
+         */
+        $invalidPatterns = [
+            '%propid:',
+            '%assetid%',
+            '%owner_steamid%',
+            '%listingid%',
+            '%classid%',
+            '%instanceid%',
+        ];
+
+        foreach (
+            $invalidPatterns as $pattern
+        ) {
+            if (
+                stripos(
+                    $url,
+                    $pattern
+                ) !== false
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isInspectUrl(
+        string $url
+    ): bool {
+        /*
+         * Steam puede utilizar ambas variantes.
+         */
+        if (
+            !str_starts_with(
+                $url,
+                'steam://rungame/730/'
+            )
+            &&
+            !str_starts_with(
+                $url,
+                'steam://run/730/'
+            )
+        ) {
+            return false;
+        }
+
+        if (
+            stripos(
+                $url,
+                'csgo_econ_action_preview'
+            ) === false
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function requestFloat(
+        string $inspectUrl
+    ): ?array {
         $ch =
-            curl_init($url);
+            curl_init(
+                self::API_URL
+            );
 
         curl_setopt_array(
             $ch,
             [
-                CURLOPT_RETURNTRANSFER =>
-                    true,
+                CURLOPT_RETURNTRANSFER => true,
 
-                CURLOPT_TIMEOUT =>
-                    15,
+                CURLOPT_TIMEOUT => 12,
 
-                CURLOPT_CONNECTTIMEOUT =>
-                    8,
+                CURLOPT_CONNECTTIMEOUT => 5,
 
-                CURLOPT_SSL_VERIFYPEER =>
-                    true,
+                CURLOPT_SSL_VERIFYPEER => true,
 
                 CURLOPT_HTTPHEADER => [
-                    'Accept: application/json'
+                    'Accept: application/json',
                 ],
 
                 CURLOPT_USERAGENT =>
-                    'CS2Inventory/1.0'
+                    'CS2Inventory/1.0',
+
+                CURLOPT_URL =>
+                    self::API_URL
+                    . '?url='
+                    . rawurlencode(
+                        $inspectUrl
+                    ),
             ]
         );
 
@@ -239,14 +257,23 @@ class SkinFloatService
         if (
             $response === false
         ) {
-            throw new \RuntimeException(
-                'No se pudo consultar el Float.'
-                . (
-                    $curlError !== ''
-                        ? ' ' . $curlError
-                        : ''
-                )
+            error_log(
+                'Float CURL error: '
+                . $curlError
             );
+
+            return null;
+        }
+
+        if (
+            $httpCode !== 200
+        ) {
+            error_log(
+                'Float API HTTP error: '
+                . $httpCode
+            );
+
+            return null;
         }
 
         $data =
@@ -256,145 +283,39 @@ class SkinFloatService
             );
 
         if (
-            $httpCode < 200
-            ||
-            $httpCode >= 300
-        ) {
-            $message =
-                'El servicio de Float no '
-                . 'ha respondido correctamente.';
-
-            if (
-                is_array($data)
-                &&
-                isset(
-                    $data['error']
-                )
-            ) {
-                $message .=
-                    ' '
-                    . (string)
-                        $data['error'];
-            }
-
-            throw new \RuntimeException(
-                $message
-            );
-        }
-
-        if (
             !is_array($data)
-        ) {
-            throw new \RuntimeException(
-                'Respuesta inválida del servicio '
-                . 'de Float.'
-            );
-        }
-
-        return $data;
-    }
-
-    private function getCacheFile(
-        string $inspectUrl
-    ): string {
-        return
-            self::CACHE_DIRECTORY
-            . '/'
-            . hash(
-                'sha256',
-                $inspectUrl
-            )
-            . '.json';
-    }
-
-    private function ensureDirectory(): void
-    {
-        if (
-            is_dir(
-                self::CACHE_DIRECTORY
-            )
-        ) {
-            return;
-        }
-
-        if (
-            !mkdir(
-                self::CACHE_DIRECTORY,
-                0775,
-                true
-            )
-            &&
-            !is_dir(
-                self::CACHE_DIRECTORY
-            )
-        ) {
-            throw new \RuntimeException(
-                'No se pudo crear el directorio '
-                . 'de caché de Floats.'
-            );
-        }
-    }
-
-    private function readJson(
-        string $file
-    ): ?array {
-        $content =
-            file_get_contents(
-                $file
-            );
-
-        if (
-            $content === false
         ) {
             return null;
         }
 
-        $data =
-            json_decode(
-                $content,
-                true
-            );
-
-        return is_array(
-            $data
-        )
-            ? $data
-            : null;
-    }
-
-    private function writeJson(
-        string $file,
-        array $data
-    ): void {
-        $json =
-            json_encode(
-                $data,
-                JSON_UNESCAPED_UNICODE
-                |
-                JSON_UNESCAPED_SLASHES
-                |
-                JSON_PRETTY_PRINT
-            );
+        $itemInfo =
+            $data['iteminfo']
+            ?? $data;
 
         if (
-            $json === false
+            !isset(
+                $itemInfo['floatvalue']
+            )
         ) {
-            throw new \RuntimeException(
-                'No se pudo guardar el Float.'
-            );
+            return null;
         }
 
-        if (
-            file_put_contents(
-                $file,
-                $json,
-                LOCK_EX
-            ) === false
-        ) {
-            throw new \RuntimeException(
-                'No se pudo escribir la caché '
-                . 'de Float.'
-            );
-        }
+        return [
+            'float' =>
+                (float)
+                $itemInfo['floatvalue'],
+
+            'paint_seed' =>
+                isset(
+                    $itemInfo['paintseed']
+                )
+                    ? (int)
+                        $itemInfo['paintseed']
+                    : null,
+
+            'wear' =>
+                $itemInfo['wear_name']
+                ?? null,
+        ];
     }
 }
