@@ -808,7 +808,7 @@ textarea {
    --------------------------------------------------------- */
 
 .site-footer {
-    padding: 30px 0;
+    padding: 32px 0;
 
     background: var(--color-black);
 
@@ -822,19 +822,102 @@ textarea {
     align-items: center;
     justify-content: space-between;
 
-    gap: 20px;
+    gap: 30px;
 }
 
-.site-footer p {
-    color: var(--color-gray-medium);
+.footer-brand {
+    max-width: 800px;
+}
+
+.footer-copyright {
+    color: var(--color-gray);
 
     font-size: 13px;
-    line-height: 1.5;
+    font-weight: 600;
 }
 
-.site-footer p:first-child {
+.footer-disclaimer {
+    max-width: 760px;
+
+    margin-top: 8px;
+
+    color: var(--color-gray-medium);
+
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.footer-links {
+    flex-shrink: 0;
+}
+
+.footer-links a {
+    display: inline-flex;
+
+    align-items: center;
+
+    min-height: 40px;
+
+    padding: 0 15px;
+
+    border: 1px solid
+        rgba(217, 217, 217, 0.25);
+
+    border-radius: var(--radius-small);
+
     color: var(--color-gray);
+
+    font-size: 13px;
     font-weight: 600;
+
+    transition:
+        color var(--transition),
+        border-color var(--transition),
+        background var(--transition);
+}
+
+.footer-links a:hover {
+    color: var(--color-white);
+
+    border-color:
+        var(--color-primary);
+
+    background:
+        rgba(54, 60, 191, 0.15);
+}
+
+
+/* ---------------------------------------------------------
+   Footer - Mobile
+   --------------------------------------------------------- */
+
+@media (max-width: 520px) {
+
+    .site-footer {
+        padding: 28px 0;
+    }
+
+    .footer-container {
+        align-items: flex-start;
+
+        flex-direction: column;
+
+        gap: 18px;
+    }
+
+    .footer-disclaimer {
+        font-size: 11px;
+    }
+
+    .footer-links {
+        width: 100%;
+    }
+
+    .footer-links a {
+        width: 100%;
+
+        justify-content: center;
+    }
 }
 
 

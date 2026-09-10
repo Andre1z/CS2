@@ -361,22 +361,30 @@ $isLoggedIn =
          ===================================================== -->
 
     <footer class="site-footer">
-
         <div class="container footer-container">
 
-            <p>
-                &copy;
-                <?= date('Y') ?>
-                CS2 Inventory
-            </p>
+            <div class="footer-brand">
+                <p class="footer-copyright">
+                    &copy;
+                    <?= date('Y') ?>
+                    CS2 Inventory
+                </p>
 
-            <p>
-                Plataforma independiente para la gestión
-                de inventarios de CS2.
-            </p>
+                <p class="footer-disclaimer">
+                    CS2 Inventory es una plataforma independiente
+                    y no está afiliada, asociada, autorizada,
+                    respaldada ni patrocinada por Valve Corporation.
+                    Counter-Strike 2 y Steam son marcas comerciales
+                    de Valve Corporation.
+                </p>
+            </div>
 
+            <div class="footer-links">
+                <a href="legal.php">
+                    Aviso legal
+                </a>
+            </div>
         </div>
-
     </footer>
 
 </body>
