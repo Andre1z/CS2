@@ -2,7 +2,7 @@
 /.env
 
 /storage/prices/*.json
-
+/storage/.md
 /.idea/
 /.vscode/
 .DS_Store
