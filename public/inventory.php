@@ -10,8 +10,7 @@ use CS2\Steam\SteamInventory;
 use CS2\Pricing\PriceService;
 
 if (
-    !isset($_SESSION['steam_id'])
-    || empty($_SESSION['steam_id'])
+    !isset($_SESSION['steamid'])
 ) {
     header(
         'Location: index.php'
@@ -21,7 +20,7 @@ if (
 }
 
 $steamId =
-    $_SESSION['steam_id'];
+    $_SESSION['steamid'];
 
 $error = null;
 
