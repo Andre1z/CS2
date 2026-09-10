@@ -10,15 +10,8 @@ class SteamInventory
 
     private const CONTEXT_ID = 2;
 
-    /*
-     * No vamos a pedir 5000 objetos de golpe.
-     * Steam puede devolver HTTP 400 con cantidades grandes.
-     */
     private const ITEMS_PER_REQUEST = 2000;
 
-    /**
-     * Obtiene el inventario público de CS2.
-     */
     public function getInventory(
         string $steamId
     ): array {
@@ -32,11 +25,6 @@ class SteamInventory
 
         $startAssetId = null;
 
-        /*
-         * Seguridad para evitar bucles infinitos
-         * en caso de que Steam devuelva una respuesta
-         * inesperada.
-         */
         $requestNumber = 0;
 
         $maxRequests = 50;
@@ -56,14 +44,12 @@ class SteamInventory
                 $startAssetId
             );
 
-            $response = $this->request($url);
+            $response =
+                $this->request($url);
 
-            /*
-             * Steam puede devolver 200 pero indicar
-             * que la operación no ha tenido éxito.
-             */
             if (
-                isset($response['success']) &&
+                isset($response['success'])
+                &&
                 (int) $response['success'] !== 1
             ) {
                 throw new \RuntimeException(
@@ -72,36 +58,40 @@ class SteamInventory
             }
 
             $pageItems =
-                $this->processInventory($response);
+                $this->processInventory(
+                    $response,
+                    $steamId
+                );
 
-            $items = array_merge(
-                $items,
-                $pageItems
-            );
+            $items =
+                array_merge(
+                    $items,
+                    $pageItems
+                );
 
-            /*
-             * Si Steam indica que hay más objetos,
-             * utilizamos last_assetid para pedir
-             * la siguiente página.
-             */
             if (
-                !empty($response['more_items']) &&
-                !empty($response['last_assetid'])
+                !empty(
+                    $response['more_items']
+                )
+                &&
+                !empty(
+                    $response['last_assetid']
+                )
             ) {
                 $startAssetId =
-                    (string) $response['last_assetid'];
+                    (string)
+                    $response['last_assetid'];
             } else {
                 $startAssetId = null;
             }
 
-        } while ($startAssetId !== null);
+        } while (
+            $startAssetId !== null
+        );
 
         return $items;
     }
 
-    /**
-     * Construye la URL del inventario.
-     */
     private function buildInventoryUrl(
         string $steamId,
         ?string $startAssetId = null
@@ -114,75 +104,90 @@ class SteamInventory
             self::ITEMS_PER_REQUEST
         );
 
-        if ($startAssetId !== null) {
-            $url .= '&start_assetid='
-                . urlencode($startAssetId);
+        if (
+            $startAssetId !== null
+        ) {
+            $url .=
+                '&start_assetid='
+                . urlencode(
+                    $startAssetId
+                );
         }
 
         return $url;
     }
 
-    /**
-     * Realiza la petición a Steam.
-     */
     private function request(
         string $url
     ): array {
-        $ch = curl_init($url);
+        $ch =
+            curl_init($url);
 
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-
-            CURLOPT_TIMEOUT => 20,
-
-            CURLOPT_CONNECTTIMEOUT => 10,
-
-            CURLOPT_SSL_VERIFYPEER => true,
-
-            CURLOPT_HTTPHEADER => [
-                'Accept: application/json',
-            ],
-
-            CURLOPT_USERAGENT =>
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                . 'AppleWebKit/537.36 '
-                . '(KHTML, like Gecko) '
-                . 'Chrome/140.0 Safari/537.36'
-        ]);
-
-        $response = curl_exec($ch);
-
-        $httpCode = curl_getinfo(
+        curl_setopt_array(
             $ch,
-            CURLINFO_HTTP_CODE
+            [
+                CURLOPT_RETURNTRANSFER =>
+                    true,
+
+                CURLOPT_TIMEOUT =>
+                    20,
+
+                CURLOPT_CONNECTTIMEOUT =>
+                    10,
+
+                CURLOPT_SSL_VERIFYPEER =>
+                    true,
+
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json'
+                ],
+
+                CURLOPT_USERAGENT =>
+                    'Mozilla/5.0 '
+                    . '(Windows NT 10.0; Win64; x64) '
+                    . 'AppleWebKit/537.36 '
+                    . '(KHTML, like Gecko) '
+                    . 'Chrome/140.0 Safari/537.36'
+            ]
         );
 
-        $curlError = curl_error($ch);
+        $response =
+            curl_exec($ch);
+
+        $httpCode =
+            curl_getinfo(
+                $ch,
+                CURLINFO_HTTP_CODE
+            );
+
+        $curlError =
+            curl_error($ch);
 
         curl_close($ch);
 
-        if ($response === false) {
+        if (
+            $response === false
+        ) {
             throw new \RuntimeException(
                 'No se pudo conectar con Steam: '
                 . $curlError
             );
         }
 
-        /*
-         * Intentamos interpretar la respuesta aunque
-         * Steam haya devuelto un código HTTP de error.
-         */
-        $data = json_decode(
-            $response,
-            true
-        );
+        $data =
+            json_decode(
+                $response,
+                true
+            );
 
         if (
             $httpCode !== 200
         ) {
             $details = '';
 
-            if (is_array($data)) {
+            if (
+                is_array($data)
+            ) {
                 $details =
                     json_encode(
                         $data,
@@ -201,13 +206,16 @@ class SteamInventory
                 . $httpCode
                 . (
                     $details !== ''
-                        ? ' | Respuesta: ' . $details
+                        ? ' | Respuesta: '
+                            . $details
                         : ''
                 )
             );
         }
 
-        if (!is_array($data)) {
+        if (
+            !is_array($data)
+        ) {
             throw new \RuntimeException(
                 'Steam ha devuelto una respuesta '
                 . 'que no es JSON válido.'
@@ -217,64 +225,161 @@ class SteamInventory
         return $data;
     }
 
-    /**
-     * Procesa una página del inventario.
-     */
     private function processInventory(
-        array $data
+        array $data,
+        string $steamId
     ): array {
         $assets =
-            $data['assets'] ?? [];
+            $data['assets']
+            ?? [];
 
         $descriptions =
-            $data['descriptions'] ?? [];
+            $data['descriptions']
+            ?? [];
 
         $items = [];
 
-        /*
-         * En lugar de recorrer todas las descriptions
-         * para cada asset, creamos un índice.
-         */
         $descriptionMap = [];
 
-        foreach ($descriptions as $description) {
+        foreach (
+            $descriptions
+            as $description
+        ) {
             $classId =
-                $description['classid'] ?? null;
+                $description['classid']
+                ?? null;
 
             $instanceId =
-                $description['instanceid'] ?? '0';
+                $description['instanceid']
+                ?? '0';
 
-            if (!$classId) {
+            if (
+                !$classId
+            ) {
                 continue;
             }
 
             $key =
-                $classId . '_' . $instanceId;
+                $classId
+                . '_'
+                . $instanceId;
 
             $descriptionMap[$key] =
                 $description;
         }
 
-        foreach ($assets as $asset) {
+        foreach (
+            $assets
+            as $asset
+        ) {
             $classId =
-                $asset['classid'] ?? null;
+                $asset['classid']
+                ?? null;
 
             $instanceId =
-                $asset['instanceid'] ?? '0';
+                $asset['instanceid']
+                ?? '0';
 
-            if (!$classId) {
+            if (
+                !$classId
+            ) {
                 continue;
             }
 
             $key =
-                $classId . '_' . $instanceId;
+                $classId
+                . '_'
+                . $instanceId;
 
             $description =
                 $descriptionMap[$key]
                 ?? null;
 
-            if (!$description) {
+            if (
+                !$description
+            ) {
                 continue;
+            }
+
+            $tags =
+                is_array(
+                    $description['tags']
+                    ?? null
+                )
+                    ? $description['tags']
+                    : [];
+
+            $wear =
+                $this->getTagValue(
+                    $tags,
+                    'Exterior'
+                );
+
+            $rarity =
+                $this->getTagValue(
+                    $tags,
+                    'Rarity'
+                );
+
+            $weapon =
+                $this->getTagValue(
+                    $tags,
+                    'Weapon'
+                );
+
+            $inspectUrl =
+                $this->getInspectUrl(
+                    $description,
+                    $steamId,
+                    (string) (
+                        $asset['assetid']
+                        ?? ''
+                    )
+                );
+
+            $hasFloat =
+                $wear !== null
+                &&
+                $inspectUrl !== null;
+
+            $marketHashName =
+                $description[
+                    'market_hash_name'
+                ]
+                ?? null;
+
+            $itemType =
+                $description['type']
+                ?? null;
+
+            /*
+             * Los objetos con float son
+             * individuales.
+             *
+             * Los objetos sin float pueden
+             * agruparse si comparten el
+             * mismo market_hash_name.
+             */
+            $stackable =
+                !$hasFloat
+                &&
+                !empty(
+                    $marketHashName
+                );
+
+            $nameColor =
+                $description['name_color']
+                ?? null;
+
+            if (
+                !is_string($nameColor)
+                ||
+                !preg_match(
+                    '/^[0-9a-fA-F]{6}$/',
+                    $nameColor
+                )
+            ) {
+                $nameColor = null;
             }
 
             $items[] = [
@@ -292,24 +397,188 @@ class SteamInventory
                     $description['name']
                     ?? 'Objeto desconocido',
 
+                'market_name' =>
+                    $description['market_name']
+                    ?? (
+                        $description['name']
+                        ?? 'Objeto desconocido'
+                    ),
+
                 'market_hash_name' =>
-                    $description['market_hash_name']
-                    ?? null,
+                    $marketHashName,
 
                 'icon_url' =>
                     $description['icon_url']
                     ?? null,
 
                 'tradable' =>
-                    $description['tradable']
-                    ?? 0,
+                    (int) (
+                        $description['tradable']
+                        ?? 0
+                    ),
 
                 'marketable' =>
-                    $description['marketable']
-                    ?? 0
+                    (int) (
+                        $description['marketable']
+                        ?? 0
+                    ),
+
+                'commodity' =>
+                    (int) (
+                        $description['commodity']
+                        ?? 0
+                    ),
+
+                'type' =>
+                    $itemType,
+
+                'weapon' =>
+                    $weapon,
+
+                'wear' =>
+                    $wear,
+
+                'rarity' =>
+                    $rarity,
+
+                'name_color' =>
+                    $nameColor,
+
+                'inspect_url' =>
+                    $inspectUrl,
+
+                'has_float' =>
+                    $hasFloat,
+
+                'stackable' =>
+                    $stackable,
+
+                'price' =>
+                    null,
+
+                'price_min' =>
+                    null,
+
+                'price_max' =>
+                    null,
+
+                'price_count' =>
+                    0,
+
+                'price_total_sources' =>
+                    0,
+
+                'price_markets' =>
+                    [],
+
+                'price_providers' =>
+                    []
             ];
         }
 
         return $items;
+    }
+
+    private function getTagValue(
+        array $tags,
+        string $category
+    ): ?string {
+        foreach (
+            $tags
+            as $tag
+        ) {
+            if (
+                ($tag['category'] ?? null)
+                === $category
+            ) {
+                $value =
+                    $tag['localized_tag_name']
+                    ?? null;
+
+                if (
+                    is_string($value)
+                    &&
+                    trim($value) !== ''
+                ) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function getInspectUrl(
+        array $description,
+        string $steamId,
+        string $assetId
+    ): ?string {
+        $actions =
+            $description['actions']
+            ?? [];
+
+        if (
+            !is_array($actions)
+        ) {
+            return null;
+        }
+
+        foreach (
+            $actions
+            as $action
+        ) {
+            $link =
+                $action['link']
+                ?? null;
+
+            if (
+                !is_string($link)
+                ||
+                $link === ''
+            ) {
+                continue;
+            }
+
+            if (
+                !str_contains(
+                    $link,
+                    'csgo_econ_action_preview'
+                )
+            ) {
+                continue;
+            }
+
+            /*
+             * Steam puede devolver
+             * placeholders.
+             */
+            $link =
+                str_replace(
+                    [
+                        '%owner_steamid%',
+                        '%assetid%'
+                    ],
+                    [
+                        $steamId,
+                        $assetId
+                    ],
+                    $link
+                );
+
+            /*
+             * Validamos que sigue siendo
+             * un inspect link de Steam.
+             */
+            if (
+                str_starts_with(
+                    $link,
+                    'steam://'
+                )
+            ) {
+                return $link;
+            }
+        }
+
+        return null;
     }
 }
