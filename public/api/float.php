@@ -12,114 +12,127 @@ header(
     'Content-Type: application/json; charset=utf-8'
 );
 
-if (
-    !isset(
-        $_SESSION['steam_id']
-    )
-    &&
-    !isset(
-        $_SESSION['steamid']
-    )
-) {
-    http_response_code(401);
+header(
+    'Cache-Control: no-store, no-cache, must-revalidate'
+);
 
-    echo json_encode([
-        'success' => false,
-        'error' =>
-            'No has iniciado sesión.'
-    ]);
 
-    exit;
-}
+/*
+ * ---------------------------------------------------------
+ * SESIÓN
+ * ---------------------------------------------------------
+ */
 
 $steamId =
-    $_SESSION['steam_id']
-    ?? $_SESSION['steamid']
+    $_SESSION['steamid']
+    ?? $_SESSION['steam_id']
     ?? null;
 
 if (
-    !is_string($steamId)
-    ||
-    !ctype_digit($steamId)
+    !$steamId
 ) {
     http_response_code(401);
 
-    echo json_encode([
-        'success' => false,
-        'error' =>
-            'SteamID inválido.'
-    ]);
+    echo json_encode(
+        [
+            'success' => false,
+            'message' => 'Sesión no válida.',
+        ],
+        JSON_UNESCAPED_UNICODE
+    );
 
     exit;
 }
+
+
+/*
+ * ---------------------------------------------------------
+ * INSPECT URL
+ * ---------------------------------------------------------
+ */
 
 $inspectUrl =
     $_GET['inspect_url']
+    ?? $_GET['url']
     ?? '';
 
+$inspectUrl =
+    trim(
+        (string)
+        $inspectUrl
+    );
+
 if (
-    !is_string($inspectUrl)
-    ||
-    trim($inspectUrl) === ''
+    $inspectUrl === ''
 ) {
     http_response_code(400);
 
-    echo json_encode([
-        'success' => false,
-        'error' =>
-            'Falta el inspect link.'
-    ]);
+    echo json_encode(
+        [
+            'success' => false,
+            'message' => 'Inspect URL no proporcionada.',
+        ],
+        JSON_UNESCAPED_UNICODE
+    );
 
     exit;
 }
 
+
+/*
+ * ---------------------------------------------------------
+ * SERVICIO
+ * ---------------------------------------------------------
+ */
+
 try {
+
     $service =
         new SkinFloatService();
 
     $result =
         $service->getFloat(
             $inspectUrl,
+            (string)
             $steamId
         );
 
+    /*
+     * No es un error HTTP que un objeto no tenga
+     * float disponible.
+     */
     if (
         $result === null
     ) {
-        http_response_code(404);
-
-        echo json_encode([
-            'success' => false,
-            'error' =>
-                'No se ha podido obtener el Float.'
-        ]);
+        echo json_encode(
+            [
+                'success' => false,
+                'available' => false,
+                'message' =>
+                    'Float no disponible.',
+            ],
+            JSON_UNESCAPED_UNICODE
+        );
 
         exit;
     }
 
     echo json_encode(
         [
-            'success' =>
-                true,
+            'success' => true,
+            'available' => true,
 
             'float' =>
-                $result['float'],
+                $result['float']
+                ?? null,
 
             'paint_seed' =>
                 $result['paint_seed']
                 ?? null,
 
-            'wear_name' =>
-                $result['wear_name']
+            'wear' =>
+                $result['wear']
                 ?? null,
-
-            'weapon_type' =>
-                $result['weapon_type']
-                ?? null,
-
-            'item_name' =>
-                $result['item_name']
-                ?? null
         ],
         JSON_UNESCAPED_UNICODE
     );
@@ -127,17 +140,21 @@ try {
 } catch (
     Throwable $e
 ) {
+
     error_log(
         'Float API error: '
         . $e->getMessage()
     );
 
-    http_response_code(502);
+    http_response_code(500);
 
-    echo json_encode([
-        'success' => false,
-        'error' =>
-            'No se ha podido consultar '
-            . 'el Float en este momento.'
-    ]);
+    echo json_encode(
+        [
+            'success' => false,
+            'available' => false,
+            'message' =>
+                'No se pudo obtener el float.',
+        ],
+        JSON_UNESCAPED_UNICODE
+    );
 }

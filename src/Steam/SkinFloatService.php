@@ -27,6 +27,15 @@ class SkinFloatService
         }
     }
 
+    /**
+     * Obtiene el float de un objeto.
+     *
+     * Devuelve null cuando:
+     * - el inspect link no es válido
+     * - Steam devolvió una plantilla
+     * - CSGOFloat no responde
+     * - el objeto no tiene float
+     */
     public function getFloat(
         string $inspectUrl,
         string $steamId
@@ -35,23 +44,11 @@ class SkinFloatService
             trim($inspectUrl);
 
         /*
-         * Steam puede devolver plantillas
-         * como:
-         *
-         * steam://run/730//+csgo_econ_action_preview%20%propid:6%
-         *
-         * No contienen los datos reales del objeto.
+         * No intentamos procesar enlaces vacíos
+         * o plantillas incompletas de Steam.
          */
         if (
-            $this->isInvalidTemplate(
-                $inspectUrl
-            )
-        ) {
-            return null;
-        }
-
-        if (
-            !$this->isInspectUrl(
+            !$this->isValidInspectUrl(
                 $inspectUrl
             )
         ) {
@@ -59,11 +56,12 @@ class SkinFloatService
         }
 
         /*
-         * Los inspect links clásicos contienen
+         * Los inspect links clásicos contienen:
+         *
          * S + SteamID + A + assetid + D + ...
          *
-         * Si existe S, comprobamos que pertenece
-         * al usuario de la sesión.
+         * Si existe SteamID en el enlace,
+         * comprobamos que pertenece al usuario.
          */
         if (
             preg_match(
@@ -79,6 +77,9 @@ class SkinFloatService
             }
         }
 
+        /*
+         * Caché basada en el inspect link completo.
+         */
         $cacheKey =
             hash(
                 'sha256',
@@ -87,12 +88,12 @@ class SkinFloatService
 
         $cacheFile =
             $this->cacheDirectory
-            . '/'
+            . DIRECTORY_SEPARATOR
             . $cacheKey
             . '.json';
 
         /*
-         * Caché.
+         * Leer caché.
          */
         if (
             is_file($cacheFile)
@@ -108,12 +109,18 @@ class SkinFloatService
             if (
                 is_array($cached)
                 &&
-                isset($cached['float'])
+                array_key_exists(
+                    'float',
+                    $cached
+                )
             ) {
                 return $cached;
             }
         }
 
+        /*
+         * Consultar CSGOFloat.
+         */
         $result =
             $this->requestFloat(
                 $inspectUrl
@@ -125,6 +132,9 @@ class SkinFloatService
             return null;
         }
 
+        /*
+         * Guardar resultado.
+         */
         file_put_contents(
             $cacheFile,
             json_encode(
@@ -138,15 +148,53 @@ class SkinFloatService
         return $result;
     }
 
-    private function isInvalidTemplate(
+    /**
+     * Comprueba que realmente tenemos un inspect link
+     * útil y no una plantilla de Steam.
+     */
+    private function isValidInspectUrl(
         string $url
     ): bool {
         if ($url === '') {
-            return true;
+            return false;
         }
 
         /*
-         * Plantillas que Steam deja sin resolver.
+         * Steam puede devolver estas dos variantes.
+         */
+        $validScheme =
+            str_starts_with(
+                $url,
+                'steam://rungame/730/'
+            )
+            ||
+            str_starts_with(
+                $url,
+                'steam://run/730/'
+            );
+
+        if (!$validScheme) {
+            return false;
+        }
+
+        /*
+         * Tiene que ser una acción de inspección.
+         */
+        if (
+            stripos(
+                $url,
+                'csgo_econ_action_preview'
+            ) === false
+        ) {
+            return false;
+        }
+
+        /*
+         * Steam puede dejar placeholders sin sustituir.
+         *
+         * Ejemplo:
+         *
+         * +csgo_econ_action_preview %propid:6%
          */
         $invalidPatterns = [
             '%propid:',
@@ -155,6 +203,7 @@ class SkinFloatService
             '%listingid%',
             '%classid%',
             '%instanceid%',
+            '%market_id%',
         ];
 
         foreach (
@@ -166,52 +215,41 @@ class SkinFloatService
                     $pattern
                 ) !== false
             ) {
-                return true;
+                return false;
             }
         }
 
-        return false;
-    }
-
-    private function isInspectUrl(
-        string $url
-    ): bool {
         /*
-         * Steam puede utilizar ambas variantes.
+         * En los enlaces clásicos esperamos S/A/D.
+         *
+         * En los inspect links modernos los datos pueden
+         * ir codificados de otra manera, por lo que no
+         * exigimos obligatoriamente este patrón.
          */
-        if (
-            !str_starts_with(
-                $url,
-                'steam://rungame/730/'
-            )
-            &&
-            !str_starts_with(
-                $url,
-                'steam://run/730/'
-            )
-        ) {
-            return false;
-        }
-
-        if (
-            stripos(
-                $url,
-                'csgo_econ_action_preview'
-            ) === false
-        ) {
-            return false;
-        }
-
         return true;
     }
 
+    /**
+     * Consulta CSGOFloat.
+     */
     private function requestFloat(
         string $inspectUrl
     ): ?array {
-        $ch =
-            curl_init(
-                self::API_URL
+        $url =
+            self::API_URL
+            . '?url='
+            . rawurlencode(
+                $inspectUrl
             );
+
+        $ch =
+            curl_init($url);
+
+        if (
+            $ch === false
+        ) {
+            return null;
+        }
 
         curl_setopt_array(
             $ch,
@@ -230,13 +268,6 @@ class SkinFloatService
 
                 CURLOPT_USERAGENT =>
                     'CS2Inventory/1.0',
-
-                CURLOPT_URL =>
-                    self::API_URL
-                    . '?url='
-                    . rawurlencode(
-                        $inspectUrl
-                    ),
             ]
         );
 
@@ -244,7 +275,7 @@ class SkinFloatService
             curl_exec($ch);
 
         $httpCode =
-            curl_getinfo(
+            (int) curl_getinfo(
                 $ch,
                 CURLINFO_HTTP_CODE
             );
@@ -285,6 +316,10 @@ class SkinFloatService
         if (
             !is_array($data)
         ) {
+            error_log(
+                'Float API returned invalid JSON.'
+            );
+
             return null;
         }
 

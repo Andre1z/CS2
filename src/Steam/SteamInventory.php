@@ -15,7 +15,9 @@ class SteamInventory
     public function getInventory(
         string $steamId
     ): array {
-        if (!ctype_digit($steamId)) {
+        if (
+            !ctype_digit($steamId)
+        ) {
             throw new \RuntimeException(
                 'SteamID inválido.'
             );
@@ -32,17 +34,21 @@ class SteamInventory
         do {
             $requestNumber++;
 
-            if ($requestNumber > $maxRequests) {
+            if (
+                $requestNumber > $maxRequests
+            ) {
                 throw new \RuntimeException(
                     'El inventario es demasiado grande '
-                    . 'o Steam no está devolviendo una paginación válida.'
+                    . 'o Steam no está devolviendo una '
+                    . 'paginación válida.'
                 );
             }
 
-            $url = $this->buildInventoryUrl(
-                $steamId,
-                $startAssetId
-            );
+            $url =
+                $this->buildInventoryUrl(
+                    $steamId,
+                    $startAssetId
+                );
 
             $response =
                 $this->request($url);
@@ -96,13 +102,14 @@ class SteamInventory
         string $steamId,
         ?string $startAssetId = null
     ): string {
-        $url = sprintf(
-            'https://steamcommunity.com/inventory/%s/%d/%d?l=english&count=%d',
-            $steamId,
-            self::APP_ID,
-            self::CONTEXT_ID,
-            self::ITEMS_PER_REQUEST
-        );
+        $url =
+            sprintf(
+                'https://steamcommunity.com/inventory/%s/%d/%d?l=english&count=%d',
+                $steamId,
+                self::APP_ID,
+                self::CONTEXT_ID,
+                self::ITEMS_PER_REQUEST
+            );
 
         if (
             $startAssetId !== null
@@ -123,31 +130,34 @@ class SteamInventory
         $ch =
             curl_init($url);
 
+        if (
+            $ch === false
+        ) {
+            throw new \RuntimeException(
+                'No se pudo iniciar la conexión con Steam.'
+            );
+        }
+
         curl_setopt_array(
             $ch,
             [
-                CURLOPT_RETURNTRANSFER =>
-                    true,
+                CURLOPT_RETURNTRANSFER => true,
 
-                CURLOPT_TIMEOUT =>
-                    20,
+                CURLOPT_TIMEOUT => 20,
 
-                CURLOPT_CONNECTTIMEOUT =>
-                    10,
+                CURLOPT_CONNECTTIMEOUT => 10,
 
-                CURLOPT_SSL_VERIFYPEER =>
-                    true,
+                CURLOPT_SSL_VERIFYPEER => true,
 
                 CURLOPT_HTTPHEADER => [
-                    'Accept: application/json'
+                    'Accept: application/json',
                 ],
 
                 CURLOPT_USERAGENT =>
-                    'Mozilla/5.0 '
-                    . '(Windows NT 10.0; Win64; x64) '
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                     . 'AppleWebKit/537.36 '
                     . '(KHTML, like Gecko) '
-                    . 'Chrome/140.0 Safari/537.36'
+                    . 'Chrome/140.0 Safari/537.36',
             ]
         );
 
@@ -155,7 +165,7 @@ class SteamInventory
             curl_exec($ch);
 
         $httpCode =
-            curl_getinfo(
+            (int) curl_getinfo(
                 $ch,
                 CURLINFO_HTTP_CODE
             );
@@ -206,8 +216,7 @@ class SteamInventory
                 . $httpCode
                 . (
                     $details !== ''
-                        ? ' | Respuesta: '
-                            . $details
+                        ? ' | Respuesta: ' . $details
                         : ''
                 )
             );
@@ -239,11 +248,16 @@ class SteamInventory
 
         $items = [];
 
+        /*
+         * -------------------------------------------------
+         * MAPA DE DESCRIPCIONES
+         * -------------------------------------------------
+         */
+
         $descriptionMap = [];
 
         foreach (
-            $descriptions
-            as $description
+            $descriptions as $description
         ) {
             $classId =
                 $description['classid']
@@ -268,9 +282,14 @@ class SteamInventory
                 $description;
         }
 
+        /*
+         * -------------------------------------------------
+         * ASSETS
+         * -------------------------------------------------
+         */
+
         foreach (
-            $assets
-            as $asset
+            $assets as $asset
         ) {
             $classId =
                 $asset['classid']
@@ -301,64 +320,173 @@ class SteamInventory
                 continue;
             }
 
+            /*
+             * -------------------------------------------------
+             * TAGS
+             * -------------------------------------------------
+             */
+
             $tags =
-                is_array(
-                    $description['tags']
-                    ?? null
-                )
-                    ? $description['tags']
-                    : [];
+                $description['tags']
+                ?? [];
 
-            $wear =
-                $this->getTagValue(
-                    $tags,
-                    'Exterior'
-                );
+            $type = null;
 
-            $rarity =
-                $this->getTagValue(
-                    $tags,
-                    'Rarity'
-                );
+            $weapon = null;
 
-            $weapon =
-                $this->getTagValue(
-                    $tags,
-                    'Weapon'
-                );
+            $rarity = null;
+
+            $rarityColor = null;
+
+            $wear = null;
+
+            $exterior = null;
+
+            foreach (
+                $tags as $tag
+            ) {
+                $category =
+                    strtolower(
+                        (string)
+                        (
+                            $tag['category']
+                            ?? ''
+                        )
+                    );
+
+                $localizedName =
+                    $tag['localized_tag_name']
+                    ?? $tag['name']
+                    ?? null;
+
+                $color =
+                    $tag['color']
+                    ?? null;
+
+                switch ($category) {
+
+                    case 'type':
+
+                        $type =
+                            $localizedName;
+
+                        break;
+
+                    case 'weapon':
+
+                        $weapon =
+                            $localizedName;
+
+                        break;
+
+                    case 'rarity':
+
+                        $rarity =
+                            $localizedName;
+
+                        if (
+                            is_string($color)
+                            &&
+                            preg_match(
+                                '/^[a-f0-9]{6}$/i',
+                                $color
+                            )
+                        ) {
+                            $rarityColor =
+                                '#'
+                                . $color;
+                        }
+
+                        break;
+
+                    case 'exterior':
+
+                        $exterior =
+                            $localizedName;
+
+                        break;
+                }
+            }
+
+            /*
+             * -------------------------------------------------
+             * INSPECT URL
+             * -------------------------------------------------
+             */
 
             $inspectUrl =
-                $this->getInspectUrl(
+                $this->extractInspectUrl(
                     $description,
                     $steamId,
-                    (string) (
+                    (string)
+                    (
                         $asset['assetid']
                         ?? ''
                     )
                 );
 
+            /*
+             * Un objeto solo puede cargar float si
+             * tenemos un inspect real.
+             */
             $hasFloat =
-                $wear !== null
-                &&
-                $inspectUrl !== null;
+                $this->hasValidInspectUrl(
+                    $inspectUrl
+                );
 
-            $marketHashName =
-                $description[
-                    'market_hash_name'
-                ]
+            /*
+             * -------------------------------------------------
+             * DATOS VISUALES
+             * -------------------------------------------------
+             */
+
+            $nameColor =
+                $description['name_color']
                 ?? null;
 
-            $itemType =
-                $description['type']
+            if (
+                is_string($nameColor)
+                &&
+                !preg_match(
+                    '/^#[a-f0-9]{6}$/i',
+                    $nameColor
+                )
+            ) {
+                $nameColor = null;
+            }
+
+            if (
+                is_string($nameColor)
+                &&
+                !str_starts_with(
+                    $nameColor,
+                    '#'
+                )
+            ) {
+                $nameColor =
+                    '#'
+                    . $nameColor;
+            }
+
+            /*
+             * -------------------------------------------------
+             * MARKET HASH NAME
+             * -------------------------------------------------
+             */
+
+            $marketHashName =
+                $description['market_hash_name']
                 ?? null;
 
             /*
-             * Los objetos con float son
-             * individuales.
+             * -------------------------------------------------
+             * STACKABLE
+             * -------------------------------------------------
              *
-             * Los objetos sin float pueden
-             * agruparse si comparten el
-             * mismo market_hash_name.
+             * Agrupamos objetos que no necesitan float.
+             *
+             * Las armas/skins con inspect se mantienen
+             * individuales.
              */
             $stackable =
                 !$hasFloat
@@ -367,22 +495,25 @@ class SteamInventory
                     $marketHashName
                 );
 
-            $nameColor =
-                $description['name_color']
-                ?? null;
+            /*
+             * Commodity es una buena pista adicional
+             * para objetos comerciables por cantidad.
+             */
+            $commodity =
+                (int)
+                (
+                    $description['commodity']
+                    ?? 0
+                );
 
-            if (
-                !is_string($nameColor)
-                ||
-                !preg_match(
-                    '/^[0-9a-fA-F]{6}$/',
-                    $nameColor
-                )
-            ) {
-                $nameColor = null;
-            }
+            /*
+             * -------------------------------------------------
+             * ITEM FINAL
+             * -------------------------------------------------
+             */
 
             $items[] = [
+
                 'assetid' =>
                     $asset['assetid']
                     ?? null,
@@ -393,16 +524,19 @@ class SteamInventory
                 'instanceid' =>
                     $instanceId,
 
+                'amount' =>
+                    max(
+                        1,
+                        (int)
+                        (
+                            $asset['amount']
+                            ?? 1
+                        )
+                    ),
+
                 'name' =>
                     $description['name']
                     ?? 'Objeto desconocido',
-
-                'market_name' =>
-                    $description['market_name']
-                    ?? (
-                        $description['name']
-                        ?? 'Objeto desconocido'
-                    ),
 
                 'market_hash_name' =>
                     $marketHashName,
@@ -412,103 +546,63 @@ class SteamInventory
                     ?? null,
 
                 'tradable' =>
-                    (int) (
+                    (int)
+                    (
                         $description['tradable']
                         ?? 0
                     ),
 
                 'marketable' =>
-                    (int) (
+                    (int)
+                    (
                         $description['marketable']
                         ?? 0
                     ),
 
                 'commodity' =>
-                    (int) (
-                        $description['commodity']
-                        ?? 0
-                    ),
+                    $commodity,
 
                 'type' =>
-                    $itemType,
+                    $type,
 
                 'weapon' =>
                     $weapon,
 
-                'wear' =>
-                    $wear,
-
                 'rarity' =>
                     $rarity,
+
+                'rarity_color' =>
+                    $rarityColor,
 
                 'name_color' =>
                     $nameColor,
 
+                'wear' =>
+                    $exterior,
+
+                'exterior' =>
+                    $exterior,
+
                 'inspect_url' =>
-                    $inspectUrl,
+                    $hasFloat
+                        ? $inspectUrl
+                        : null,
 
                 'has_float' =>
                     $hasFloat,
 
                 'stackable' =>
                     $stackable,
-
-                'price' =>
-                    null,
-
-                'price_min' =>
-                    null,
-
-                'price_max' =>
-                    null,
-
-                'price_count' =>
-                    0,
-
-                'price_total_sources' =>
-                    0,
-
-                'price_markets' =>
-                    [],
-
-                'price_providers' =>
-                    []
             ];
         }
 
         return $items;
     }
 
-    private function getTagValue(
-        array $tags,
-        string $category
-    ): ?string {
-        foreach (
-            $tags
-            as $tag
-        ) {
-            if (
-                ($tag['category'] ?? null)
-                === $category
-            ) {
-                $value =
-                    $tag['localized_tag_name']
-                    ?? null;
-
-                if (
-                    is_string($value)
-                    &&
-                    trim($value) !== ''
-                ) {
-                    return $value;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private function getInspectUrl(
+    /**
+     * Busca el inspect link en las actions de Steam.
+     */
+    private function extractInspectUrl(
         array $description,
         string $steamId,
         string $assetId
@@ -517,68 +611,120 @@ class SteamInventory
             $description['actions']
             ?? [];
 
-        if (
-            !is_array($actions)
-        ) {
-            return null;
-        }
-
         foreach (
-            $actions
-            as $action
+            $actions as $action
         ) {
             $link =
                 $action['link']
-                ?? null;
+                ?? '';
 
             if (
-                !is_string($link)
-                ||
-                $link === ''
-            ) {
-                continue;
-            }
-
-            if (
-                !str_contains(
+                stripos(
                     $link,
                     'csgo_econ_action_preview'
-                )
+                ) === false
             ) {
                 continue;
             }
 
             /*
-             * Steam puede devolver
-             * placeholders.
+             * Sustituir placeholders clásicos.
              */
             $link =
                 str_replace(
                     [
                         '%owner_steamid%',
-                        '%assetid%'
+                        '%assetid%',
                     ],
                     [
                         $steamId,
-                        $assetId
+                        $assetId,
                     ],
                     $link
                 );
 
             /*
-             * Validamos que sigue siendo
-             * un inspect link de Steam.
+             * Si Steam deja placeholders,
+             * lo consideramos inválido.
              */
             if (
-                str_starts_with(
+                str_contains(
                     $link,
-                    'steam://'
+                    '%propid:'
+                )
+                ||
+                str_contains(
+                    $link,
+                    '%assetid%'
+                )
+                ||
+                str_contains(
+                    $link,
+                    '%owner_steamid%'
                 )
             ) {
-                return $link;
+                return null;
             }
+
+            return $link;
         }
 
         return null;
+    }
+
+    private function hasValidInspectUrl(
+        ?string $inspectUrl
+    ): bool {
+        if (
+            empty($inspectUrl)
+        ) {
+            return false;
+        }
+
+        if (
+            !str_starts_with(
+                $inspectUrl,
+                'steam://rungame/730/'
+            )
+            &&
+            !str_starts_with(
+                $inspectUrl,
+                'steam://run/730/'
+            )
+        ) {
+            return false;
+        }
+
+        if (
+            stripos(
+                $inspectUrl,
+                'csgo_econ_action_preview'
+            ) === false
+        ) {
+            return false;
+        }
+
+        $invalidPatterns = [
+            '%propid:',
+            '%assetid%',
+            '%owner_steamid%',
+            '%classid%',
+            '%instanceid%',
+        ];
+
+        foreach (
+            $invalidPatterns as $pattern
+        ) {
+            if (
+                stripos(
+                    $inspectUrl,
+                    $pattern
+                ) !== false
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

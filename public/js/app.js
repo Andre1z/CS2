@@ -1,76 +1,87 @@
-'use strict';
-
-
 document.addEventListener(
     'DOMContentLoaded',
     () => {
 
-        const inventoryGrid =
+        /*
+         * =====================================================
+         * ELEMENTOS
+         * =====================================================
+         */
+
+        const grid =
             document.getElementById(
-                'inventoryGrid'
+                'inventory-grid'
             );
 
         const searchInput =
             document.getElementById(
-                'searchInventory'
+                'inventory-search'
             );
 
         const sortSelect =
             document.getElementById(
-                'sortInventory'
+                'inventory-sort'
             );
 
         const selectAllButton =
             document.getElementById(
-                'selectAll'
+                'select-all'
             );
 
-        const clearSelectionButton =
+        const selectAllCount =
             document.getElementById(
-                'clearSelection'
+                'select-all-count'
             );
 
-        const selectedItemsContainer =
+        const selectedItems =
             document.getElementById(
-                'selectedItems'
+                'selected-items'
             );
 
-        const selectedEmpty =
+        const selectedCount =
             document.getElementById(
-                'selectedEmpty'
+                'selected-count'
             );
 
         const selectedTotal =
             document.getElementById(
-                'selectedTotal'
+                'selected-total'
+            );
+
+        const exitGroupSelection =
+            document.getElementById(
+                'exit-group-selection'
             );
 
         const sellButton =
             document.getElementById(
-                'sellButton'
+                'sell-selected'
             );
 
         const refreshButton =
             document.getElementById(
-                'refreshInventory'
+                'refresh-inventory'
             );
 
-        const inventoryCount =
+        const toast =
             document.getElementById(
-                'inventoryCount'
-            );
-
-        const noSearchResults =
-            document.getElementById(
-                'noSearchResults'
+                'inventory-toast'
             );
 
 
-        if (
-            !inventoryGrid
-        ) {
+        if (!grid) {
             return;
         }
+
+
+        /*
+         * =====================================================
+         * ESTADO
+         * =====================================================
+         */
+
+        let groupSelectionMode =
+            null;
 
 
         /*
@@ -79,517 +90,462 @@ document.addEventListener(
          * =====================================================
          */
 
-        function parsePrice(
-            value
+        function getCheckboxes() {
+
+            return [
+                ...document.querySelectorAll(
+                    '.item-checkbox'
+                )
+            ];
+        }
+
+
+        function getSelected() {
+
+            return getCheckboxes()
+                .filter(
+                    checkbox =>
+                        checkbox.checked
+                        &&
+                        checkbox.dataset.assetId
+                );
+        }
+
+
+        function getName(
+            checkbox
         ) {
-            const number =
-                Number.parseFloat(
-                    value
+
+            return (
+                checkbox.dataset.name
+                ||
+                'Objeto'
+            );
+        }
+
+
+        function getPrice(
+            checkbox
+        ) {
+
+            const value =
+                parseFloat(
+                    checkbox.dataset.price
+                    || '0'
                 );
 
-            return Number.isFinite(
-                number
-            )
-                ? number
-                : 0;
+            if (
+                !Number.isFinite(value)
+            ) {
+                return 0;
+            }
+
+            return value;
         }
 
 
         function formatPrice(
             value
         ) {
-            return new Intl.NumberFormat(
+
+            return value.toLocaleString(
                 'es-ES',
                 {
                     minimumFractionDigits: 2,
+
                     maximumFractionDigits: 2
                 }
-            ).format(
-                value
             ) + ' €';
         }
 
 
-        function escapeHtml(
-            value
-        ) {
-            const div =
-                document.createElement(
-                    'div'
-                );
-
-            div.textContent =
-                value ?? '';
-
-            return div.innerHTML;
-        }
-
-
-        /*
-         * =====================================================
-         * GROUPS
-         * =====================================================
-         */
-
-        function getGroups() {
-            return Array.from(
-                inventoryGrid.querySelectorAll(
-                    '.inventory-group'
-                )
-            );
-        }
-
-
-        /*
-         * =====================================================
-         * STACKS
-         * =====================================================
-         */
-
-        function initStackButtons() {
-
-            document
-                .querySelectorAll(
-                    '.stack-toggle'
-                )
-                .forEach(
-                    button => {
-
-                        button.addEventListener(
-                            'click',
-                            event => {
-
-                                event.preventDefault();
-
-                                event.stopPropagation();
-
-                                const group =
-                                    button.closest(
-                                        '.inventory-group'
-                                    );
-
-                                if (
-                                    !group
-                                ) {
-                                    return;
-                                }
-
-                                group.classList.toggle(
-                                    'is-expanded'
-                                );
-
-                                const expanded =
-                                    group.classList.contains(
-                                        'is-expanded'
-                                    );
-
-                                button.title =
-                                    expanded
-                                        ? 'Agrupar objetos'
-                                        : 'Desagrupar objetos';
-
-                                button.setAttribute(
-                                    'aria-label',
-                                    expanded
-                                        ? 'Agrupar objetos'
-                                        : 'Desagrupar objetos'
-                                );
-
-                            }
-                        );
-
-                    }
-                );
-
-        }
-
-
-        /*
-         * =====================================================
-         * SELECTION
-         * =====================================================
-         */
-
-        function getSelectedCheckboxes() {
-
-            return Array.from(
-                document.querySelectorAll(
-                    '.item-checkbox:checked'
-                )
-            ).filter(
-                checkbox => {
-                    return !checkbox.disabled;
-                }
-            );
-
-        }
-
-
-        function getGroupChildren(
-            group
+        function showToast(
+            message
         ) {
 
-            return Array.from(
-                group.querySelectorAll(
-                    '.stack-child-checkbox input'
-                )
-            );
-
-        }
-
-
-        function syncMasterCheckbox(
-            group
-        ) {
-
-            const master =
-                group.querySelector(
-                    '.stack-master-checkbox'
-                );
-
-            if (
-                !master
-            ) {
+            if (!toast) {
                 return;
             }
 
-            const children =
-                getGroupChildren(
-                    group
-                );
+            toast.textContent =
+                message;
 
-            if (
-                children.length === 0
-            ) {
-                return;
-            }
-
-            const checkedCount =
-                children.filter(
-                    checkbox =>
-                        checkbox.checked
-                ).length;
-
-            master.checked =
-                checkedCount === children.length;
-
-            master.indeterminate =
-                checkedCount > 0
-                &&
-                checkedCount < children.length;
-        }
-
-
-        function selectGroup(
-            group,
-            checked
-        ) {
-
-            const children =
-                getGroupChildren(
-                    group
-                );
-
-            children.forEach(
-                checkbox => {
-                    checkbox.checked =
-                        checked;
-                }
+            toast.classList.add(
+                'show'
             );
 
-            syncMasterCheckbox(
-                group
+            clearTimeout(
+                showToast.timer
             );
 
-            updateSelectionUI();
-        }
+            showToast.timer =
+                setTimeout(
+                    () => {
 
-
-        function initCheckboxes() {
-
-            document
-                .querySelectorAll(
-                    '.item-checkbox'
-                )
-                .forEach(
-                    checkbox => {
-
-                        checkbox.addEventListener(
-                            'change',
-                            () => {
-
-                                const group =
-                                    checkbox.closest(
-                                        '.inventory-group'
-                                    );
-
-                                if (
-                                    checkbox.classList.contains(
-                                        'stack-master-checkbox'
-                                    )
-                                ) {
-
-                                    if (
-                                        group
-                                    ) {
-                                        selectGroup(
-                                            group,
-                                            checkbox.checked
-                                        );
-                                    }
-
-                                    return;
-                                }
-
-
-                                if (
-                                    group
-                                ) {
-                                    syncMasterCheckbox(
-                                        group
-                                    );
-                                }
-
-                                updateSelectionUI();
-
-                            }
+                        toast.classList.remove(
+                            'show'
                         );
 
-                    }
+                    },
+                    3000
                 );
-
         }
 
 
         /*
          * =====================================================
-         * SELECTION DATA
+         * AGRUPAR SELECCIÓN
          * =====================================================
          */
 
-        function getItemData(
-            checkbox
-        ) {
-
-            const group =
-                checkbox.closest(
-                    '.inventory-group'
-                );
-
-            if (
-                !group
-            ) {
-                return null;
-            }
-
-
-            /*
-             * Item de stack.
-             */
-            if (
-                checkbox.dataset.assetId
-            ) {
-
-                return {
-                    assetId:
-                        checkbox.dataset.assetId,
-
-                    name:
-                        checkbox.dataset.name
-                        || 'Objeto',
-
-                    price:
-                        parsePrice(
-                            checkbox.dataset.price
-                        ),
-
-                    image:
-                        checkbox.dataset.image
-                        || ''
-                };
-
-            }
-
-
-            /*
-             * Item individual.
-             */
-            const nameInput =
-                group.querySelector(
-                    '.single-item-name'
-                );
-
-            const priceInput =
-                group.querySelector(
-                    '.single-item-price'
-                );
-
-            const assetInput =
-                group.querySelector(
-                    '.single-item-asset'
-                );
-
-            const imageInput =
-                group.querySelector(
-                    '.single-item-image'
-                );
-
-            return {
-                assetId:
-                    assetInput?.value
-                    || group.dataset.groupKey,
-
-                name:
-                    nameInput?.value
-                    || 'Objeto',
-
-                price:
-                    parsePrice(
-                        priceInput?.value
-                    ),
-
-                image:
-                    imageInput?.value
-                    || ''
-            };
-
-        }
-
-
-        /*
-         * =====================================================
-         * SIDEBAR
-         * =====================================================
-         */
-
-        function updateSelectionUI() {
+        function getSelectionGroups() {
 
             const selected =
-                getSelectedCheckboxes();
+                getSelected();
 
-            selectedItemsContainer
-                .querySelectorAll(
-                    '.selected-item'
-                )
-                .forEach(
-                    item => item.remove()
-                );
+            const groups =
+                new Map();
 
-
-            let total = 0;
+            const individual = [];
 
 
             selected.forEach(
                 checkbox => {
 
-                    const data =
-                        getItemData(
+                    const stackable =
+                        checkbox.dataset.stackable
+                        === '1';
+
+
+                    /*
+                     * Objetos normales:
+                     * siempre individuales.
+                     */
+
+                    if (!stackable) {
+
+                        individual.push(
                             checkbox
                         );
 
-                    if (
-                        !data
-                    ) {
                         return;
                     }
 
-                    total +=
-                        data.price;
 
+                    /*
+                     * Objetos agrupables:
+                     * agrupamos por market hash.
+                     */
 
-                    const element =
-                        document.createElement(
-                            'div'
+                    const key =
+                        checkbox.dataset.marketHashName
+                        ||
+                        getName(
+                            checkbox
                         );
 
-                    element.className =
-                        'selected-item';
 
+                    if (
+                        !groups.has(key)
+                    ) {
 
-                    const imageHtml =
-                        data.image
-                            ? `
-                                <img
-                                    src="https://community.cloudflare.steamstatic.com/economy/image/${encodeURIComponent(data.image)}/64fx64f"
-                                    alt=""
-                                >
-                            `
-                            : `
-                                <div class="selected-item-no-image">
-                                    ?
-                                </div>
-                            `;
-
-
-                    element.innerHTML = `
-                        <div class="selected-item-image">
-                            ${imageHtml}
-                        </div>
-
-                        <div class="selected-item-info">
-
-                            <strong>
-                                ${escapeHtml(data.name)}
-                            </strong>
-
-                            <span>
-                                ${formatPrice(data.price)}
-                            </span>
-
-                        </div>
-
-                        <button
-                            type="button"
-                            class="remove-selected-item"
-                            title="Quitar"
-                        >
-                            ×
-                        </button>
-                    `;
-
-
-                    const removeButton =
-                        element.querySelector(
-                            '.remove-selected-item'
+                        groups.set(
+                            key,
+                            []
                         );
-
-                    removeButton.addEventListener(
-                        'click',
-                        () => {
-
-                            checkbox.checked =
-                                false;
-
-                            const group =
-                                checkbox.closest(
-                                    '.inventory-group'
-                                );
-
-                            if (
-                                group
-                            ) {
-                                syncMasterCheckbox(
-                                    group
-                                );
-                            }
-
-                            updateSelectionUI();
-
-                        }
-                    );
+                    }
 
 
-                    selectedItemsContainer
-                        .appendChild(
-                            element
+                    groups
+                        .get(key)
+                        .push(
+                            checkbox
                         );
-
                 }
             );
 
 
-            selectedEmpty.hidden =
-                selected.length > 0;
+            return {
+                groups,
+                individual
+            };
+        }
+
+
+        /*
+         * =====================================================
+         * PANEL DERECHO
+         * =====================================================
+         */
+
+        function renderSelectedItems() {
+
+            const selected =
+                getSelected();
+
+            const {
+                groups,
+                individual
+            } =
+                getSelectionGroups();
+
+
+            selectedItems.innerHTML =
+                '';
+
+
+            /*
+             * -------------------------------------------------
+             * GRUPOS
+             * -------------------------------------------------
+             */
+
+            groups.forEach(
+                (
+                    items
+                ) => {
+
+                    if (
+                        !items.length
+                    ) {
+                        return;
+                    }
+
+
+                    const row =
+                        document.createElement(
+                            'div'
+                        );
+
+                    row.className =
+                        'selected-group-row';
+
+
+                    const info =
+                        document.createElement(
+                            'div'
+                        );
+
+                    info.className =
+                        'selected-group-info';
+
+
+                    const name =
+                        document.createElement(
+                            'strong'
+                        );
+
+                    name.textContent =
+                        getName(
+                            items[0]
+                        );
+
+
+                    const quantity =
+                        document.createElement(
+                            'span'
+                        );
+
+                    quantity.className =
+                        'selected-group-quantity';
+
+                    quantity.textContent =
+                        '× '
+                        +
+                        items.length;
+
+
+                    info.appendChild(
+                        name
+                    );
+
+                    info.appendChild(
+                        quantity
+                    );
+
+
+                    const total =
+                        items.reduce(
+                            (
+                                sum,
+                                checkbox
+                            ) => {
+
+                                return (
+                                    sum
+                                    +
+                                    getPrice(
+                                        checkbox
+                                    )
+                                );
+
+                            },
+                            0
+                        );
+
+
+                    const price =
+                        document.createElement(
+                            'strong'
+                        );
+
+                    price.className =
+                        'selected-group-price';
+
+                    price.textContent =
+                        formatPrice(
+                            total
+                        );
+
+
+                    /*
+                     * IMPORTANTE:
+                     *
+                     * No añadimos imagen.
+                     */
+
+                    row.appendChild(
+                        info
+                    );
+
+                    row.appendChild(
+                        price
+                    );
+
+                    selectedItems.appendChild(
+                        row
+                    );
+                }
+            );
+
+
+            /*
+             * -------------------------------------------------
+             * INDIVIDUALES
+             * -------------------------------------------------
+             */
+
+            individual.forEach(
+                checkbox => {
+
+                    const row =
+                        document.createElement(
+                            'div'
+                        );
+
+                    row.className =
+                        'selected-item-row';
+
+
+                    const info =
+                        document.createElement(
+                            'div'
+                        );
+
+                    info.className =
+                        'selected-item-info';
+
+
+                    const name =
+                        document.createElement(
+                            'strong'
+                        );
+
+                    name.textContent =
+                        getName(
+                            checkbox
+                        );
+
+
+                    const price =
+                        document.createElement(
+                            'span'
+                        );
+
+                    price.textContent =
+                        formatPrice(
+                            getPrice(
+                                checkbox
+                            )
+                        );
+
+
+                    info.appendChild(
+                        name
+                    );
+
+                    info.appendChild(
+                        price
+                    );
+
+
+                    row.appendChild(
+                        info
+                    );
+
+                    selectedItems.appendChild(
+                        row
+                    );
+                }
+            );
+
+
+            /*
+             * -------------------------------------------------
+             * NADA SELECCIONADO
+             * -------------------------------------------------
+             */
+
+            if (
+                selected.length === 0
+            ) {
+
+                const empty =
+                    document.createElement(
+                        'div'
+                    );
+
+                empty.className =
+                    'selected-empty';
+
+                empty.textContent =
+                    'Selecciona objetos para añadirlos aquí.';
+
+                selectedItems.appendChild(
+                    empty
+                );
+            }
+
+
+            /*
+             * -------------------------------------------------
+             * CONTADOR
+             * -------------------------------------------------
+             */
+
+            selectedCount.textContent =
+                selected.length;
+
+
+            /*
+             * -------------------------------------------------
+             * TOTAL
+             * -------------------------------------------------
+             */
+
+            const total =
+                selected.reduce(
+                    (
+                        sum,
+                        checkbox
+                    ) =>
+                        sum
+                        +
+                        getPrice(
+                            checkbox
+                        ),
+                    0
+                );
 
 
             selectedTotal.textContent =
@@ -598,22 +554,173 @@ document.addEventListener(
                 );
 
 
-            clearSelectionButton.disabled =
-                selected.length === 0;
+            /*
+             * -------------------------------------------------
+             * VENDER
+             * -------------------------------------------------
+             */
+
+            if (sellButton) {
+
+                sellButton.disabled =
+                    selected.length === 0;
+            }
 
 
-            sellButton.disabled =
-                selected.length === 0;
+            /*
+             * -------------------------------------------------
+             * MODO GRUPO
+             * -------------------------------------------------
+             */
+
+            const hasStackableSelected =
+                selected.some(
+                    checkbox =>
+                        checkbox.dataset.stackable
+                        === '1'
+                );
 
 
-            selectAllButton.classList.toggle(
-                'has-selection',
-                selected.length > 0
-            );
+            if (
+                hasStackableSelected
+            ) {
+
+                exitGroupSelection.hidden =
+                    false;
+
+            } else {
+
+                groupSelectionMode =
+                    null;
+
+                exitGroupSelection.hidden =
+                    true;
+            }
 
 
-            updateSelectAllState();
+            /*
+             * Actualizar estado visual de
+             * las tarjetas.
+             */
 
+            updateCardStates();
+
+        }
+
+
+        /*
+         * =====================================================
+         * ESTADO VISUAL TARJETAS
+         * =====================================================
+         */
+
+        function updateCardStates() {
+
+            document
+                .querySelectorAll(
+                    '.inventory-card'
+                )
+                .forEach(
+                    card => {
+
+                        const checkboxes =
+                            [
+                                ...card.querySelectorAll(
+                                    '.item-checkbox'
+                                )
+                            ];
+
+
+                        const checked =
+                            checkboxes.filter(
+                                checkbox =>
+                                    checkbox.checked
+                            );
+
+
+                        card.classList.toggle(
+                            'is-selected',
+                            checked.length > 0
+                        );
+
+
+                        /*
+                         * Master checkbox del stack.
+                         */
+
+                        const master =
+                            card.querySelector(
+                                '.stack-master'
+                            );
+
+
+                        if (
+                            master
+                        ) {
+
+                            if (
+                                checked.length ===
+                                checkboxes.length
+                                &&
+                                checkboxes.length > 0
+                            ) {
+
+                                master.checked =
+                                    true;
+
+                                master.indeterminate =
+                                    false;
+
+                            } else if (
+                                checked.length > 0
+                            ) {
+
+                                master.checked =
+                                    false;
+
+                                master.indeterminate =
+                                    true;
+
+                            } else {
+
+                                master.checked =
+                                    false;
+
+                                master.indeterminate =
+                                    false;
+                            }
+                        }
+
+
+                        /*
+                         * Estado visual de cada
+                         * checkbox.
+                         */
+
+                        checkboxes.forEach(
+                            checkbox => {
+
+                                const label =
+                                    checkbox.closest(
+                                        'label'
+                                    );
+
+                                if (!label) {
+                                    return;
+                                }
+
+                                label.classList.toggle(
+                                    'is-checked',
+                                    checkbox.checked
+                                );
+                            }
+                        );
+
+                    }
+                );
+
+
+            updateSelectAllButton();
         }
 
 
@@ -623,565 +730,937 @@ document.addEventListener(
          * =====================================================
          */
 
-        function updateSelectAllState() {
+        function updateSelectAllButton() {
 
-            const groups =
-                getGroups()
-                    .filter(
-                        group =>
-                            !group.hidden
-                    );
+            const all =
+                getCheckboxes();
 
-            const allCheckboxes =
-                groups.flatMap(
-                    group =>
-                        Array.from(
-                            group.querySelectorAll(
-                                '.item-checkbox'
-                            )
-                        )
-                );
-
-            const checked =
-                allCheckboxes.filter(
-                    checkbox =>
-                        checkbox.checked
-                );
+            const selected =
+                getSelected();
 
 
-            selectAllButton.classList.toggle(
-                'is-active',
-                checked.length > 0
-            );
-
-
-            selectAllButton.classList.toggle(
-                'is-all',
-                allCheckboxes.length > 0
-                &&
-                checked.length ===
-                    allCheckboxes.length
-            );
-
-        }
-
-
-        selectAllButton?.addEventListener(
-            'click',
-            () => {
-
-                const groups =
-                    getGroups()
-                        .filter(
-                            group =>
-                                !group.hidden
-                        );
-
-                const allCheckboxes =
-                    groups.flatMap(
-                        group =>
-                            Array.from(
-                                group.querySelectorAll(
-                                    '.item-checkbox'
-                                )
-                            )
-                    );
-
-                const shouldSelect =
-                    !allCheckboxes.length
-                    ||
-                    allCheckboxes.some(
-                        checkbox =>
-                            !checkbox.checked
-                    );
-
-
-                allCheckboxes.forEach(
-                    checkbox => {
-                        checkbox.checked =
-                            shouldSelect;
-                    }
-                );
-
-
-                groups.forEach(
-                    group => {
-                        syncMasterCheckbox(
-                            group
-                        );
-                    }
-                );
-
-
-                updateSelectionUI();
-
-            }
-        );
-
-
-        clearSelectionButton?.addEventListener(
-            'click',
-            () => {
-
-                document
-                    .querySelectorAll(
-                        '.item-checkbox'
-                    )
-                    .forEach(
-                        checkbox => {
-                            checkbox.checked =
-                                false;
-                        }
-                    );
-
-
-                document
-                    .querySelectorAll(
-                        '.inventory-group'
-                    )
-                    .forEach(
-                        group => {
-                            syncMasterCheckbox(
-                                group
-                            );
-                        }
-                    );
-
-
-                updateSelectionUI();
-
-            }
-        );
-
-
-        /*
-         * =====================================================
-         * SEARCH
-         * =====================================================
-         */
-
-        function applySearch() {
-
-            const query =
-                searchInput
-                    ?.value
-                    .trim()
-                    .toLowerCase()
-                    || '';
-
-
-            let visibleCount = 0;
-
-
-            getGroups()
-                .forEach(
-                    group => {
-
-                        const name =
-                            group.dataset.name
-                            || '';
-
-                        const matches =
-                            query === ''
-                            ||
-                            name.includes(
-                                query
-                            );
-
-
-                        group.hidden =
-                            !matches;
-
-                        if (
-                            matches
-                        ) {
-                            visibleCount++;
-                        }
-
-                    }
-                );
+            selectAllCount.textContent =
+                selected.length;
 
 
             if (
-                noSearchResults
+                all.length === 0
             ) {
-                noSearchResults.hidden =
-                    visibleCount !== 0;
+                return;
             }
 
 
-            updateSelectAllState();
+            if (
+                selected.length ===
+                all.length
+            ) {
 
+                selectAllButton.classList.add(
+                    'is-active'
+                );
+
+            } else {
+
+                selectAllButton.classList.remove(
+                    'is-active'
+                );
+            }
         }
 
 
-        searchInput?.addEventListener(
-            'input',
-            applySearch
-        );
+        if (
+            selectAllButton
+        ) {
+
+            selectAllButton.addEventListener(
+                'click',
+                () => {
+
+                    const all =
+                        getCheckboxes();
+
+                    const selected =
+                        getSelected();
 
 
-        /*
-         * =====================================================
-         * SORT
-         * =====================================================
-         */
-
-        function sortInventory() {
-
-            const groups =
-                getGroups();
-
-            const mode =
-                sortSelect?.value
-                || 'price-desc';
+                    const shouldSelect =
+                        selected.length !==
+                        all.length;
 
 
-            groups.sort(
-                (
-                    a,
-                    b
-                ) => {
+                    all.forEach(
+                        checkbox => {
 
-                    const priceA =
-                        parsePrice(
-                            a.dataset.price
-                        );
-
-                    const priceB =
-                        parsePrice(
-                            b.dataset.price
-                        );
-
-                    const nameA =
-                        a.dataset.name
-                        || '';
-
-                    const nameB =
-                        b.dataset.name
-                        || '';
+                            checkbox.checked =
+                                shouldSelect;
+                        }
+                    );
 
 
-                    switch (
-                        mode
+                    if (
+                        shouldSelect
                     ) {
 
-                        case 'price-asc':
-                            return (
-                                priceA
-                                -
-                                priceB
+                        /*
+                         * Si hay objetos agrupables,
+                         * entramos en modo grupo.
+                         */
+
+                        const firstStack =
+                            all.find(
+                                checkbox =>
+                                    checkbox.dataset.stackable
+                                    === '1'
                             );
 
-                        case 'name-asc':
-                            return nameA.localeCompare(
-                                nameB,
-                                'es'
-                            );
 
-                        case 'name-desc':
-                            return nameB.localeCompare(
-                                nameA,
-                                'es'
-                            );
+                        if (
+                            firstStack
+                        ) {
 
-                        case 'price-desc':
-                        default:
-                            return (
-                                priceB
-                                -
-                                priceA
-                            );
+                            groupSelectionMode =
+                                firstStack.dataset.marketHashName
+                                ||
+                                getName(
+                                    firstStack
+                                );
+                        }
+
+                    } else {
+
+                        groupSelectionMode =
+                            null;
                     }
 
+
+                    renderSelectedItems();
+                }
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * MASTER CHECKBOX DE STACK
+         * =====================================================
+         */
+
+        document
+            .querySelectorAll(
+                '.stack-master'
+            )
+            .forEach(
+                master => {
+
+                    master.addEventListener(
+                        'change',
+                        event => {
+
+                            event.stopPropagation();
+
+
+                            const key =
+                                master.dataset.groupKey;
+
+
+                            const card =
+                                master.closest(
+                                    '.inventory-card'
+                                );
+
+
+                            if (!card) {
+                                return;
+                            }
+
+
+                            const children =
+                                [
+                                    ...card.querySelectorAll(
+                                        '.item-checkbox'
+                                    )
+                                ];
+
+
+                            children.forEach(
+                                checkbox => {
+
+                                    checkbox.checked =
+                                        master.checked;
+                                }
+                            );
+
+
+                            if (
+                                master.checked
+                            ) {
+
+                                const first =
+                                    children[0];
+
+                                if (
+                                    first
+                                ) {
+
+                                    groupSelectionMode =
+                                        first.dataset.marketHashName
+                                        ||
+                                        getName(
+                                            first
+                                        );
+                                }
+
+                            } else {
+
+                                /*
+                                 * Comprobar si todavía
+                                 * queda otro stack seleccionado.
+                                 */
+
+                                const remaining =
+                                    getSelected()
+                                        .filter(
+                                            checkbox =>
+                                                checkbox.dataset.stackable
+                                                === '1'
+                                        );
+
+
+                                if (
+                                    remaining.length === 0
+                                ) {
+
+                                    groupSelectionMode =
+                                        null;
+                                }
+                            }
+
+
+                            renderSelectedItems();
+                        }
+                    );
                 }
             );
 
 
-            groups.forEach(
-                group => {
-                    inventoryGrid
-                        .appendChild(
-                            group
+        /*
+         * =====================================================
+         * CHECKBOXES INDIVIDUALES
+         * =====================================================
+         */
+
+        getCheckboxes()
+            .forEach(
+                checkbox => {
+
+                    checkbox.addEventListener(
+                        'change',
+                        () => {
+
+                            const stackable =
+                                checkbox.dataset.stackable
+                                === '1';
+
+
+                            /*
+                             * Objeto agrupable.
+                             */
+
+                            if (
+                                checkbox.checked
+                                &&
+                                stackable
+                            ) {
+
+                                groupSelectionMode =
+                                    checkbox.dataset.marketHashName
+                                    ||
+                                    getName(
+                                        checkbox
+                                    );
+                            }
+
+
+                            /*
+                             * Si deseleccionamos,
+                             * comprobar si sigue habiendo
+                             * objetos del grupo.
+                             */
+
+                            if (
+                                !checkbox.checked
+                                &&
+                                stackable
+                            ) {
+
+                                const remaining =
+                                    getSelected()
+                                        .filter(
+                                            item =>
+                                                item.dataset.stackable
+                                                === '1'
+                                                &&
+                                                (
+                                                    item.dataset.marketHashName
+                                                    ||
+                                                    getName(
+                                                        item
+                                                    )
+                                                )
+                                                ===
+                                                (
+                                                    checkbox.dataset.marketHashName
+                                                    ||
+                                                    getName(
+                                                        checkbox
+                                                    )
+                                                )
+                                        );
+
+
+                                if (
+                                    remaining.length === 0
+                                ) {
+
+                                    groupSelectionMode =
+                                        null;
+                                }
+                            }
+
+
+                            renderSelectedItems();
+                        }
+                    );
+                }
+            );
+
+
+        /*
+         * =====================================================
+         * SALIR DEL MODO SELECCIÓN DE GRUPO
+         * =====================================================
+         */
+
+        if (
+            exitGroupSelection
+        ) {
+
+            exitGroupSelection.addEventListener(
+                'click',
+                () => {
+
+                    if (
+                        groupSelectionMode === null
+                    ) {
+                        return;
+                    }
+
+
+                    const currentGroup =
+                        groupSelectionMode;
+
+
+                    getCheckboxes()
+                        .forEach(
+                            checkbox => {
+
+                                if (
+                                    checkbox.dataset.stackable
+                                    !== '1'
+                                ) {
+                                    return;
+                                }
+
+
+                                const group =
+                                    checkbox.dataset.marketHashName
+                                    ||
+                                    getName(
+                                        checkbox
+                                    );
+
+
+                                if (
+                                    group ===
+                                    currentGroup
+                                ) {
+
+                                    checkbox.checked =
+                                        false;
+                                }
+                            }
+                        );
+
+
+                    /*
+                     * Desmarcar master del stack.
+                     */
+
+                    document
+                        .querySelectorAll(
+                            '.stack-master'
+                        )
+                        .forEach(
+                            master => {
+
+                                master.checked =
+                                    false;
+
+                                master.indeterminate =
+                                    false;
+                            }
+                        );
+
+
+                    groupSelectionMode =
+                        null;
+
+
+                    renderSelectedItems();
+                }
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * EXPANDIR STACK
+         * =====================================================
+         */
+
+        document
+            .querySelectorAll(
+                '.stack-toggle'
+            )
+            .forEach(
+                button => {
+
+                    button.addEventListener(
+                        'click',
+                        event => {
+
+                            event.preventDefault();
+
+                            event.stopPropagation();
+
+
+                            const card =
+                                button.closest(
+                                    '.inventory-card'
+                                );
+
+
+                            if (!card) {
+                                return;
+                            }
+
+
+                            const expanded =
+                                card.classList.toggle(
+                                    'is-expanded'
+                                );
+
+
+                            button.setAttribute(
+                                'aria-label',
+                                expanded
+                                    ? 'Ocultar objetos'
+                                    : 'Mostrar objetos'
+                            );
+
+
+                            button
+                                .querySelector(
+                                    'span'
+                                )
+                                ?.classList.toggle(
+                                    'rotated',
+                                    expanded
+                                );
+                        }
+                    );
+                }
+            );
+
+
+        /*
+         * =====================================================
+         * BÚSQUEDA
+         * =====================================================
+         */
+
+        if (
+            searchInput
+        ) {
+
+            searchInput.addEventListener(
+                'input',
+                () => {
+
+                    const query =
+                        searchInput.value
+                            .trim()
+                            .toLowerCase();
+
+
+                    document
+                        .querySelectorAll(
+                            '.inventory-card'
+                        )
+                        .forEach(
+                            card => {
+
+                                const text =
+                                    card.dataset.search
+                                    || '';
+
+
+                                const visible =
+                                    text.includes(
+                                        query
+                                    );
+
+
+                                card.classList.toggle(
+                                    'search-hidden',
+                                    !visible
+                                );
+                            }
                         );
                 }
             );
-
         }
-
-
-        sortSelect?.addEventListener(
-            'change',
-            sortInventory
-        );
 
 
         /*
          * =====================================================
-         * REFRESH
+         * ORDEN
          * =====================================================
          */
 
-        refreshButton?.addEventListener(
-            'click',
-            () => {
-
-                refreshButton.classList.add(
-                    'is-loading'
-                );
-
-                window.location.reload();
-
-            }
-        );
-
-
-        /*
-         * =====================================================
-         * FLOATS
-         * =====================================================
-         */
-
-        const floatElements =
-            Array.from(
-                document.querySelectorAll(
-                    '.item-float[data-inspect-url]'
-                )
-            );
-
-
-        const floatQueue =
-            [];
-
-        const floatProcessed =
-            new Set();
-
-        let floatBusy =
-            false;
-
-
-        function updateFloatElement(
-            element,
-            text,
-            success = true
+        if (
+            sortSelect
         ) {
 
-            const value =
-                element.querySelector(
-                    'span, b'
-                );
+            sortSelect.addEventListener(
+                'change',
+                () => {
 
-            if (
-                !value
-            ) {
-                return;
-            }
-
-            value.textContent =
-                text;
-
-            element.classList.toggle(
-                'float-loaded',
-                success
-            );
-
-            element.classList.toggle(
-                'float-error',
-                !success
-            );
-
-        }
+                    const cards =
+                        [
+                            ...grid.querySelectorAll(
+                                '.inventory-card'
+                            )
+                        ];
 
 
-        async function fetchFloat(
-            element
-        ) {
-
-            const inspectUrl =
-                element.dataset.inspectUrl;
-
-            if (
-                !inspectUrl
-            ) {
-                return;
-            }
+                    const mode =
+                        sortSelect.value;
 
 
-            const encoded =
-                encodeURIComponent(
-                    inspectUrl
-                );
+                    cards.sort(
+                        (
+                            a,
+                            b
+                        ) => {
+
+                            const priceA =
+                                parseFloat(
+                                    a.dataset.price
+                                    || '0'
+                                );
+
+                            const priceB =
+                                parseFloat(
+                                    b.dataset.price
+                                    || '0'
+                                );
+
+                            const nameA =
+                                (
+                                    a.dataset.name
+                                    || ''
+                                ).toLowerCase();
+
+                            const nameB =
+                                (
+                                    b.dataset.name
+                                    || ''
+                                ).toLowerCase();
 
 
-            try {
+                            switch (mode) {
 
-                const response =
-                    await fetch(
-                        `api/float.php?inspect_url=${encoded}`,
-                        {
-                            method: 'GET',
-                            credentials: 'same-origin',
-                            headers: {
-                                'Accept':
-                                    'application/json'
+                                case 'price-asc':
+
+                                    return (
+                                        priceA
+                                        -
+                                        priceB
+                                    );
+
+                                case 'name-asc':
+
+                                    return nameA.localeCompare(
+                                        nameB
+                                    );
+
+                                case 'name-desc':
+
+                                    return nameB.localeCompare(
+                                        nameA
+                                    );
+
+                                case 'price-desc':
+                                default:
+
+                                    return (
+                                        priceB
+                                        -
+                                        priceA
+                                    );
                             }
                         }
                     );
 
 
-                const data =
-                    await response.json();
-
-
-                if (
-                    response.ok
-                    &&
-                    data.success
-                    &&
-                    typeof data.float ===
-                        'number'
-                ) {
-
-                    updateFloatElement(
-                        element,
-                        data.float.toFixed(8),
-                        true
+                    cards.forEach(
+                        card =>
+                            grid.appendChild(
+                                card
+                            )
                     );
-
-                } else {
-
-                    updateFloatElement(
-                        element,
-                        'No disponible',
-                        false
-                    );
-
                 }
-
-            } catch (
-                error
-            ) {
-
-                updateFloatElement(
-                    element,
-                    'No disponible',
-                    false
-                );
-
-            }
-
+            );
         }
 
 
-        async function processFloatQueue() {
+        /*
+         * =====================================================
+         * BOTÓN REFRESH
+         * =====================================================
+         */
 
-            if (
-                floatBusy
-            ) {
-                return;
-            }
+        if (
+            refreshButton
+        ) {
 
-            const element =
-                floatQueue.shift();
+            refreshButton.addEventListener(
+                'click',
+                () => {
 
-            if (
-                !element
-            ) {
-                return;
-            }
+                    refreshButton.classList.add(
+                        'is-loading'
+                    );
 
-            const inspectUrl =
-                element.dataset.inspectUrl;
+                    window.location.reload();
+                }
+            );
+        }
 
-            if (
-                !inspectUrl
-                ||
-                floatProcessed.has(
-                    inspectUrl
+
+        /*
+         * =====================================================
+         * VENDER
+         * =====================================================
+         */
+
+        if (
+            sellButton
+        ) {
+
+            sellButton.addEventListener(
+                'click',
+                () => {
+
+                    if (
+                        sellButton.disabled
+                    ) {
+                        return;
+                    }
+
+
+                    showToast(
+                        'La publicación de ventas todavía no está implementada.'
+                    );
+                }
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * FLOAT LAZY LOADING
+         * =====================================================
+         */
+
+        const floatElements =
+            [
+                ...document.querySelectorAll(
+                    '.inventory-float.float-pending[data-inspect]'
                 )
-            ) {
-                processFloatQueue();
-
-                return;
-            }
-
-            floatBusy = true;
-
-            floatProcessed.add(
-                inspectUrl
-            );
+            ];
 
 
-            await fetchFloat(
-                element
-            );
+        const floatQueue = [];
+
+        const queued =
+            new Set();
+
+        let floatLoading =
+            false;
 
 
-            /*
-             * El servicio público de Float
-             * puede tener límites.
-             *
-             * Dejamos un pequeño intervalo
-             * entre consultas.
-             */
-            await new Promise(
-                resolve =>
-                    setTimeout(
-                        resolve,
-                        350
-                    )
-            );
-
-
-            floatBusy = false;
-
-            processFloatQueue();
-
-        }
-
+        /*
+         * Meter URL en cola.
+         */
 
         function queueFloat(
             element
         ) {
 
-            const inspectUrl =
-                element.dataset.inspectUrl;
+            const inspect =
+                element.dataset.inspect;
+
 
             if (
-                !inspectUrl
+                !inspect
             ) {
                 return;
             }
 
+
             if (
-                floatProcessed.has(
-                    inspectUrl
-                )
+                queued.has(inspect)
             ) {
                 return;
             }
 
-            if (
-                floatQueue.includes(
-                    element
-                )
-            ) {
-                return;
-            }
 
-            floatQueue.push(
-                element
+            queued.add(
+                inspect
             );
 
-            processFloatQueue();
 
+            floatQueue.push({
+                element,
+                inspect
+            });
+
+
+            processFloatQueue();
         }
 
 
         /*
-         * Solo cargamos los Floats cuando
-         * el elemento entra en pantalla.
+         * Una petición cada vez.
          */
+
+        async function processFloatQueue() {
+
+            if (
+                floatLoading
+            ) {
+                return;
+            }
+
+
+            if (
+                floatQueue.length === 0
+            ) {
+                return;
+            }
+
+
+            floatLoading =
+                true;
+
+
+            const task =
+                floatQueue.shift();
+
+
+            try {
+
+                await loadFloat(
+                    task.element,
+                    task.inspect
+                );
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    'Float error:',
+                    error
+                );
+            }
+
+
+            floatLoading =
+                false;
+
+
+            /*
+             * Pequeño espacio entre peticiones.
+             */
+
+            setTimeout(
+                processFloatQueue,
+                1000
+            );
+        }
+
+
+        async function loadFloat(
+            element,
+            inspect
+        ) {
+
+            const valueElement =
+                element.querySelector(
+                    '.float-value'
+                );
+
+
+            const bar =
+                element.querySelector(
+                    '.float-bar'
+                );
+
+
+            if (
+                valueElement
+            ) {
+
+                valueElement.textContent =
+                    'Float cargando...';
+            }
+
+
+            const url =
+                'api/float.php?inspect_url='
+                +
+                encodeURIComponent(
+                    inspect
+                );
+
+
+            const response =
+                await fetch(
+                    url,
+                    {
+                        method: 'GET',
+                        credentials: 'same-origin'
+                    }
+                );
+
+
+            if (
+                !response.ok
+            ) {
+                throw new Error(
+                    'HTTP '
+                    +
+                    response.status
+                );
+            }
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                data.success
+                &&
+                data.float !== null
+            ) {
+
+                const floatValue =
+                    Number(
+                        data.float
+                    );
+
+
+                if (
+                    valueElement
+                ) {
+
+                    valueElement.textContent =
+                        'Float '
+                        +
+                        floatValue.toFixed(
+                            6
+                        );
+                }
+
+
+                /*
+                 * Barra de desgaste.
+                 *
+                 * 0 = nuevo
+                 * 1 = muy desgastado
+                 */
+
+                if (
+                    bar
+                ) {
+
+                    const normalized =
+                        Math.max(
+                            0,
+                            Math.min(
+                                1,
+                                floatValue
+                            )
+                        );
+
+
+                    bar.style.setProperty(
+                        '--wear',
+                        normalized
+                    );
+                }
+
+
+                element.classList.remove(
+                    'float-pending'
+                );
+
+                element.classList.add(
+                    'float-loaded'
+                );
+
+            } else {
+
+                if (
+                    valueElement
+                ) {
+
+                    valueElement.textContent =
+                        'Float no disponible';
+                }
+
+
+                element.classList.remove(
+                    'float-pending'
+                );
+
+                element.classList.add(
+                    'float-unavailable'
+                );
+            }
+        }
+
+
+        /*
+         * =====================================================
+         * INTERSECTION OBSERVER
+         * =====================================================
+         */
+
         if (
             'IntersectionObserver'
             in window
@@ -1205,102 +1684,44 @@ document.addEventListener(
                                     observer.unobserve(
                                         entry.target
                                     );
-
                                 }
-
                             }
                         );
 
                     },
                     {
-                        root: null,
-
                         rootMargin:
-                            '300px 0px',
-
-                        threshold:
-                            0.01
+                            '250px 0px'
                     }
                 );
 
 
             floatElements.forEach(
-                element => {
+                element =>
                     observer.observe(
                         element
-                    );
-                }
+                    )
             );
 
         } else {
 
+            /*
+             * Fallback.
+             */
+
             floatElements.forEach(
-                element => {
-                    queueFloat(
-                        element
-                    );
-                }
+                queueFloat
             );
-
         }
 
 
         /*
          * =====================================================
-         * SELL BUTTON
+         * INICIALIZACIÓN
          * =====================================================
          */
 
-        sellButton?.addEventListener(
-            'click',
-            () => {
-
-                if (
-                    sellButton.disabled
-                ) {
-                    return;
-                }
-
-                alert(
-                    'La función de publicación de objetos '
-                    + 'todavía no está conectada.'
-                );
-
-            }
-        );
-
-
-        /*
-         * =====================================================
-         * INIT
-         * =====================================================
-         */
-
-        initStackButtons();
-
-        initCheckboxes();
-
-        sortInventory();
-
-        applySearch();
-
-        updateSelectionUI();
-
-
-        /*
-         * El contador permanece mostrando
-         * objetos totales, no grupos.
-         */
-        if (
-            inventoryCount
-        ) {
-            inventoryCount.textContent =
-                String(
-                    Number(
-                        inventoryCount.textContent
-                    ) || 0
-                );
-        }
+        renderSelectedItems();
 
     }
 );

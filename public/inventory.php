@@ -11,18 +11,18 @@ use CS2\Pricing\PriceService;
 
 
 /*
- * Compatibilidad temporal con ambas
- * claves de sesión.
+ * ---------------------------------------------------------
+ * SESIÓN
+ * ---------------------------------------------------------
  */
+
 $steamId =
-    $_SESSION['steam_id']
-    ?? $_SESSION['steamid']
+    $_SESSION['steamid']
+    ?? $_SESSION['steam_id']
     ?? null;
 
 if (
-    !is_string($steamId)
-    ||
-    $steamId === ''
+    !$steamId
 ) {
     header(
         'Location: index.php'
@@ -31,109 +31,122 @@ if (
     exit;
 }
 
+
+/*
+ * ---------------------------------------------------------
+ * VARIABLES
+ * ---------------------------------------------------------
+ */
+
 $error = null;
 
 $items = [];
 
 $total = 0.0;
 
+$priceVersion = null;
+
 $priceUpdatedAt = null;
+
+
+/*
+ * ---------------------------------------------------------
+ * CARGAR INVENTARIO
+ * ---------------------------------------------------------
+ */
 
 try {
 
     /*
-     * INVENTARIO
-     *
-     * Siempre viene directamente
-     * desde Steam.
+     * Steam es la única fuente del inventario.
      */
     $inventoryService =
         new SteamInventory();
 
     $items =
-        $inventoryService
-            ->getInventory(
-                $steamId
-            );
+        $inventoryService->getInventory(
+            (string)
+            $steamId
+        );
 
 
     /*
-     * PRECIOS
-     *
-     * PriceService únicamente lee
-     * la caché local.
+     * Precios desde la caché local.
      */
     $priceService =
         new PriceService();
 
     $items =
-        $priceService
-            ->addPrices(
-                $items
-            );
+        $priceService->addPrices(
+            $items
+        );
 
     $total =
-        $priceService
-            ->calculateTotal(
-                $items
-            );
+        $priceService->calculateTotal(
+            $items
+        );
+
+    $priceVersion =
+        $priceService->getVersion();
 
     $priceUpdatedAt =
-        $priceService
-            ->getUpdatedAt();
+        $priceService->getUpdatedAt();
 
 } catch (
     Throwable $e
 ) {
+
     $error =
         $e->getMessage();
 }
 
 
 /*
- * =========================================================
- * AGRUPACIÓN
- * =========================================================
+ * ---------------------------------------------------------
+ * AGRUPAR OBJETOS
+ * ---------------------------------------------------------
+ *
+ * Las cajas y objetos stackable se agrupan por
+ * market_hash_name.
+ *
+ * Las armas/skins con float NO se agrupan.
  */
 
 $groups = [];
 
 foreach (
-    $items
-    as $item
+    $items as $index => $item
 ) {
+    $stackable =
+        !empty(
+            $item['stackable']
+        );
+
     $marketHashName =
         $item['market_hash_name']
         ?? null;
 
-    $assetId =
-        (string) (
-            $item['assetid']
-            ?? ''
-        );
-
-    $stackable =
-        !empty(
-            $item['stackable']
-        )
-        &&
-        $marketHashName !== null
-        &&
-        $marketHashName !== '';
-
     if (
         $stackable
+        &&
+        $marketHashName
     ) {
+
         $groupKey =
             'stack_'
-            . hash(
-                'sha256',
+            . sha1(
+                (string)
                 $marketHashName
             );
+
     } else {
+
         $groupKey =
             'item_'
-            . $assetId;
+            . (
+                $item['assetid']
+                ?? $index
+            );
     }
 
     if (
@@ -145,38 +158,10 @@ foreach (
             'key' =>
                 $groupKey,
 
-            'name' =>
-                $item['name']
-                ?? 'Objeto desconocido',
-
-            'market_hash_name' =>
-                $marketHashName,
-
-            'icon_url' =>
-                $item['icon_url']
-                ?? null,
-
-            'price' =>
-                $item['price']
-                ?? null,
-
-            'price_min' =>
-                $item['price_min']
-                ?? null,
-
-            'price_max' =>
-                $item['price_max']
-                ?? null,
-
-            'price_count' =>
-                $item['price_count']
-                ?? 0,
-
             'stackable' =>
                 $stackable,
 
-            'items' =>
-                []
+            'items' => [],
         ];
     }
 
@@ -186,37 +171,44 @@ foreach (
 
 
 /*
- * Orden inicial:
- * precio mayor → menor.
+ * ---------------------------------------------------------
+ * ORDEN INICIAL
+ * ---------------------------------------------------------
+ *
+ * Precio mayor a menor.
  */
-uasort(
+
+usort(
     $groups,
     static function (
         array $a,
         array $b
     ): int {
-        return
+
+        $priceA =
+            (float)
             (
-                (float) (
-                    $b['price']
-                    ?? 0
-                )
-            )
-            <=>
-            (
-                (float) (
-                    $a['price']
-                    ?? 0
-                )
+                $a['items'][0]['price']
+                ?? 0
             );
+
+        $priceB =
+            (float)
+            (
+                $b['items'][0]['price']
+                ?? 0
+            );
+
+        return $priceB <=> $priceA;
     }
 );
 
 ?>
-
 <!DOCTYPE html>
 
-<html lang="es">
+<html
+    lang="es"
+>
 
 <head>
 
@@ -225,11 +217,6 @@ uasort(
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
-    >
-
-    <meta
-        name="description"
-        content="Consulta y gestiona tu inventario de Counter-Strike 2."
     >
 
     <title>
@@ -243,30 +230,34 @@ uasort(
 
 </head>
 
-<body class="inventory-body">
+<body
+    class="inventory-body"
+>
 
-
-<header class="inventory-header">
+<header
+    class="inventory-header"
+>
 
     <a
         href="index.php"
         class="inventory-logo"
     >
-        <span class="logo-dot"></span>
-
         CS2 INVENTORY
     </a>
 
+    <div
+        class="inventory-header-right"
+    >
 
-    <div class="inventory-header-actions">
-
-        <span class="inventory-steam-id">
+        <span
+            class="steam-user"
+        >
             Steam
         </span>
 
         <a
             href="logout.php"
-            class="logout-button"
+            class="logout-link"
         >
             Cerrar sesión
         </a>
@@ -276,164 +267,133 @@ uasort(
 </header>
 
 
-<main class="inventory-layout">
+<main
+    class="inventory-shell"
+>
+
+    <?php if ($error): ?>
+
+        <section
+            class="inventory-error"
+        >
+
+            <strong>
+                No se pudo cargar el inventario
+            </strong>
+
+            <p>
+
+                <?= htmlspecialchars(
+                    $error,
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>
+
+            </p>
+
+        </section>
+
+    <?php else: ?>
 
 
-    <!-- =================================================
-         INVENTORY AREA
-         ================================================= -->
+        <section
+            class="inventory-main"
+        >
 
-    <section class="inventory-main">
+            <!-- =========================================
+                 TOOLBAR
+                 ========================================= -->
 
-
-        <!-- TOOLBAR -->
-
-        <div class="inventory-toolbar">
-
-            <div class="toolbar-left">
+            <div
+                class="inventory-toolbar"
+            >
 
                 <button
                     type="button"
-                    class="toolbar-icon-button"
-                    id="refreshInventory"
-                    title="Actualizar inventario"
+                    id="refresh-inventory"
+                    class="toolbar-button"
+                    title="Actualizar"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M20 11a8 8 0 0 0-14.9-4M4 5v4h4"
-                        />
-
-                        <path
-                            d="M4 13a8 8 0 0 0 14.9 4M20 19v-4h-4"
-                        />
-                    </svg>
+                    ↻
                 </button>
 
 
                 <button
                     type="button"
+                    id="select-all"
                     class="select-all-button"
-                    id="selectAll"
                 >
 
-                    <span class="check-icon">
-                        ✓
-                    </span>
-
-                    <span>
-                        Seleccionar todo
-                    </span>
+                    Seleccionar todo
 
                     <span
-                        class="inventory-count"
-                        id="inventoryCount"
+                        id="select-all-count"
                     >
-                        <?= count($items) ?>
+                        0
                     </span>
 
                 </button>
 
-            </div>
 
-
-            <div class="toolbar-center">
-
-                <label
-                    class="sort-control"
-                    for="sortInventory"
+                <select
+                    id="inventory-sort"
+                    class="sort-select"
                 >
 
-                    <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
+                    <option
+                        value="price-desc"
                     >
-                        <path d="M8 5v14" />
-                        <path d="m5 8 3-3 3 3" />
-                        <path d="M16 19V5" />
-                        <path d="m13 16 3 3 3-3" />
-                    </svg>
+                        Precio: Mayor a menor
+                    </option>
 
-                    <select
-                        id="sortInventory"
+                    <option
+                        value="price-asc"
+                    >
+                        Precio: Menor a mayor
+                    </option>
+
+                    <option
+                        value="name-asc"
+                    >
+                        Nombre: A-Z
+                    </option>
+
+                    <option
+                        value="name-desc"
+                    >
+                        Nombre: Z-A
+                    </option>
+
+                </select>
+
+
+                <div
+                    class="inventory-search"
+                >
+
+                    <span>
+                        ⌕
+                    </span>
+
+                    <input
+                        type="search"
+                        id="inventory-search"
+                        placeholder="Buscar skins..."
+                        autocomplete="off"
                     >
 
-                        <option value="price-desc">
-                            Precio: Mayor a menor
-                        </option>
-
-                        <option value="price-asc">
-                            Precio: Menor a mayor
-                        </option>
-
-                        <option value="name-asc">
-                            Nombre: A-Z
-                        </option>
-
-                        <option value="name-desc">
-                            Nombre: Z-A
-                        </option>
-
-                    </select>
-
-                </label>
+                </div>
 
             </div>
 
 
-            <div class="toolbar-search">
+            <!-- =========================================
+                 INFORMACIÓN
+                 ========================================= -->
 
-                <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                >
-                    <circle
-                        cx="11"
-                        cy="11"
-                        r="6"
-                    />
-
-                    <path
-                        d="m16 16 4 4"
-                    />
-                </svg>
-
-                <input
-                    type="search"
-                    id="searchInventory"
-                    placeholder="Buscar skins..."
-                    autocomplete="off"
-                >
-
-            </div>
-
-        </div>
-
-
-        <?php if ($error): ?>
-
-            <div class="inventory-error">
-
-                <strong>
-                    No se ha podido cargar el inventario.
-                </strong>
-
-                <span>
-                    <?= htmlspecialchars(
-                        $error,
-                        ENT_QUOTES,
-                        'UTF-8'
-                    ) ?>
-                </span>
-
-            </div>
-
-        <?php else: ?>
-
-
-            <div class="inventory-status">
+            <div
+                class="inventory-info"
+            >
 
                 <div>
 
@@ -442,318 +402,304 @@ uasort(
                     </strong>
 
                     <span>
-                        <?= count($items) ?>
-                        objetos
+                        <?= count($items) ?> objetos
                     </span>
 
                 </div>
 
 
-                <?php if ($priceUpdatedAt): ?>
+                <div>
 
                     <span>
-
-                        Precios actualizados:
-
-                        <?= date(
-                            'd/m/Y H:i',
-                            $priceUpdatedAt
-                        ) ?>
-
+                        Valor total
                     </span>
 
-                <?php endif; ?>
+                    <strong>
+
+                        <?= number_format(
+                            $total,
+                            0,
+                            ',',
+                            '.'
+                        ) ?>
+
+                        €
+
+                    </strong>
+
+                </div>
 
             </div>
 
 
-            <section
+            <?php if ($priceUpdatedAt): ?>
+
+                <div
+                    class="price-update-info"
+                >
+
+                    Precios actualizados:
+
+                    <?= date(
+                        'd/m/Y H:i',
+                        $priceUpdatedAt
+                    ) ?>
+
+                </div>
+
+            <?php endif; ?>
+
+
+            <!-- =========================================
+                 GRID
+                 ========================================= -->
+
+            <div
                 class="inventory-grid"
-                id="inventoryGrid"
+                id="inventory-grid"
             >
 
-                <?php if (empty($groups)): ?>
+                <?php foreach (
+                    $groups as $group
+                ): ?>
 
-                    <div class="empty-inventory">
+                    <?php
 
-                        <div class="empty-inventory-icon">
-                            📦
-                        </div>
+                    $groupItems =
+                        $group['items'];
 
-                        <h2>
-                            Tu inventario está vacío
-                        </h2>
+                    $isStack =
+                        $group['stackable']
+                        &&
+                        count(
+                            $groupItems
+                        ) > 1;
 
-                        <p>
-                            No se han encontrado objetos
-                            de Counter-Strike 2.
-                        </p>
+                    $representative =
+                        $groupItems[0];
 
-                    </div>
+                    $unitPrice =
+                        (float)
+                        (
+                            $representative['price']
+                            ?? 0
+                        );
 
-                <?php else: ?>
+                    $groupName =
+                        $representative['name']
+                        ?? 'Objeto';
 
+                    $searchName =
+                        strtolower(
+                            (
+                                $representative['name']
+                                ?? ''
+                            )
+                            . ' '
+                            .
+                            (
+                                $representative['market_hash_name']
+                                ?? ''
+                            )
+                            . ' '
+                            .
+                            (
+                                $representative['type']
+                                ?? ''
+                            )
+                        );
 
-                    <?php foreach (
-                        $groups
-                        as $group
-                    ): ?>
-
-                        <?php
-
-                        $groupItems =
-                            $group['items'];
-
-                        $groupCount =
-                            count(
-                                $groupItems
-                            );
-
-                        $representative =
-                            $groupItems[0];
-
-                        $groupPrice =
-                            $group['price'];
-
-                        $nameColor =
-                            $representative[
-                                'name_color'
-                            ]
-                            ?? null;
-
-                        $nameStyle =
-                            $nameColor
-                                ? '--item-name-color:#'
-                                    . $nameColor
-                                : '';
-
-                        ?>
-
-                        <article
-                            class="
-                                inventory-group
-                                <?= $group['stackable']
-                                    && $groupCount > 1
-                                        ? 'has-stack'
-                                        : '' ?>
-                            "
-                            data-group-key="<?= htmlspecialchars(
-                                $group['key'],
-                                ENT_QUOTES,
-                                'UTF-8'
-                            ) ?>"
-                            data-name="<?= htmlspecialchars(
-                                strtolower(
-                                    $group['name']
-                                ),
-                                ENT_QUOTES,
-                                'UTF-8'
-                            ) ?>"
-                            data-price="<?= htmlspecialchars(
-                                (string) (
-                                    $groupPrice
-                                    ?? 0
-                                ),
-                                ENT_QUOTES,
-                                'UTF-8'
-                            ) ?>"
-                        >
+                    ?>
 
 
-                            <!-- CARD PRINCIPAL -->
+                    <article
+                        class="inventory-card <?= $isStack ? 'is-stack' : '' ?>"
+                        data-group-key="<?= htmlspecialchars(
+                            $group['key'],
+                            ENT_QUOTES,
+                            'UTF-8'
+                        ) ?>"
+                        data-price="<?= $unitPrice ?>"
+                        data-name="<?= htmlspecialchars(
+                            $groupName,
+                            ENT_QUOTES,
+                            'UTF-8'
+                        ) ?>"
+                        data-search="<?= htmlspecialchars(
+                            $searchName,
+                            ENT_QUOTES,
+                            'UTF-8'
+                        ) ?>"
+                    >
 
-                            <div class="inventory-card">
+                        <?php if ($isStack): ?>
 
+                            <!-- =================================
+                                 STACK
+                                 ================================= -->
 
-                                <div class="card-top">
-
-                                    <?php if (
-                                        $group['stackable']
-                                        &&
-                                        $groupCount > 1
-                                    ): ?>
-
-                                        <span
-                                            class="stack-count"
-                                        >
-                                            ×<?= $groupCount ?>
-                                        </span>
-
-                                    <?php endif; ?>
-
-
-                                    <?php if (
-                                        $group['stackable']
-                                        &&
-                                        $groupCount > 1
-                                    ): ?>
-
-                                        <button
-                                            type="button"
-                                            class="stack-toggle"
-                                            title="Desagrupar objetos"
-                                            aria-label="Desagrupar objetos"
-                                        >
-
-                                            <svg
-                                                viewBox="0 0 24 24"
-                                                aria-hidden="true"
-                                            >
-                                                <rect
-                                                    x="4"
-                                                    y="4"
-                                                    width="7"
-                                                    height="7"
-                                                />
-
-                                                <rect
-                                                    x="13"
-                                                    y="13"
-                                                    width="7"
-                                                    height="7"
-                                                />
-
-                                                <path
-                                                    d="M13 7h4v4"
-                                                />
-
-                                                <path
-                                                    d="m17 7-5 5"
-                                                />
-                                            </svg>
-
-                                        </button>
-
-                                    <?php endif; ?>
-
-                                </div>
+                            <button
+                                type="button"
+                                class="stack-toggle"
+                                title="Mostrar objetos"
+                                aria-label="Mostrar objetos"
+                            >
+                                <span>
+                                    ↕
+                                </span>
+                            </button>
 
 
-                                <div class="card-image">
-
-                                    <?php if (
-                                        !empty(
-                                            $representative[
-                                                'icon_url'
-                                            ]
-                                        )
-                                    ): ?>
-
-                                        <img
-                                            src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
-                                                $representative[
-                                                    'icon_url'
-                                                ],
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            ) ?>/256fx256f"
-                                            alt=""
-                                            loading="lazy"
-                                        >
-
-                                    <?php else: ?>
-
-                                        <div class="no-image">
-                                            ?
-                                        </div>
-
-                                    <?php endif; ?>
-
-                                </div>
+                            <span
+                                class="stack-count"
+                            >
+                                ×<?= count(
+                                    $groupItems
+                                ) ?>
+                            </span>
 
 
-                                <div class="card-body">
+                            <div
+                                class="inventory-card-image"
+                            >
 
+                                <?php if (
+                                    !empty(
+                                        $representative['icon_url']
+                                    )
+                                ): ?>
 
-                                    <div
-                                        class="item-type"
-                                    >
-                                        <?= htmlspecialchars(
-                                            $representative[
-                                                'type'
-                                            ]
-                                            ?? 'Objeto',
+                                    <img
+                                        src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
+                                            $representative['icon_url'],
                                             ENT_QUOTES,
                                             'UTF-8'
-                                        ) ?>
-                                    </div>
+                                        ) ?>/256fx256f"
+                                        alt=""
+                                        loading="lazy"
+                                    >
+
+                                <?php endif; ?>
+
+                            </div>
 
 
-                                    <h3
-                                        class="item-name"
-                                        style="<?= htmlspecialchars(
-                                            $nameStyle,
+                            <div
+                                class="inventory-card-content"
+                            >
+
+                                <span
+                                    class="inventory-card-type"
+                                >
+                                    <?= htmlspecialchars(
+                                        $representative['type']
+                                        ?? 'Objeto',
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+                                </span>
+
+
+                                <h3
+                                    class="inventory-card-name"
+                                >
+
+                                    <?= htmlspecialchars(
+                                        $groupName,
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+
+                                </h3>
+
+
+                                <div
+                                    class="inventory-card-price"
+                                >
+
+                                    <?= number_format(
+                                        $unitPrice,
+                                        2,
+                                        ',',
+                                        '.'
+                                    ) ?>
+
+                                    €
+
+                                    <small>
+                                        / unidad
+                                    </small>
+
+                                </div>
+
+
+                                <div
+                                    class="inventory-float no-float"
+                                    aria-hidden="true"
+                                >
+                                    &nbsp;
+                                </div>
+
+
+                                <label
+                                    class="card-checkbox stack-master-checkbox"
+                                >
+
+                                    <input
+                                        type="checkbox"
+                                        class="stack-master"
+                                        data-group-key="<?= htmlspecialchars(
+                                            $group['key'],
                                             ENT_QUOTES,
                                             'UTF-8'
                                         ) ?>"
                                     >
-                                        <?= htmlspecialchars(
-                                            $group['name'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </h3>
+
+                                    <span></span>
+
+                                </label>
+
+                            </div>
 
 
-                                    <?php if (
-                                        !empty(
-                                            $representative[
-                                                'wear'
-                                            ]
-                                        )
-                                    ): ?>
+                            <!-- =================================
+                                 OBJETOS DEL STACK
+                                 ================================= -->
+
+                            <div
+                                class="stack-items"
+                            >
+
+                                <?php foreach (
+                                    $groupItems as $stackItem
+                                ): ?>
+
+                                    <label
+                                        class="stack-item-row"
+                                    >
 
                                         <span
-                                            class="item-wear"
+                                            class="stack-item-name"
                                         >
+
                                             <?= htmlspecialchars(
-                                                $representative[
-                                                    'wear'
-                                                ],
+                                                $stackItem['name']
+                                                ?? 'Objeto',
                                                 ENT_QUOTES,
                                                 'UTF-8'
                                             ) ?>
+
                                         </span>
 
-                                    <?php endif; ?>
 
-
-                                    <?php if (
-                                        !empty(
-                                            $representative[
-                                                'has_float'
-                                            ]
-                                        )
-                                    ): ?>
-
-                                        <div
-                                            class="item-float"
-                                            data-inspect-url="<?= htmlspecialchars(
-                                                $representative[
-                                                    'inspect_url'
-                                                ],
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            ) ?>"
-                                        >
-                                            Float
-                                            <span>
-                                                Cargando...
-                                            </span>
-                                        </div>
-
-                                    <?php endif; ?>
-
-
-                                    <?php if (
-                                        $groupPrice !== null
-                                    ): ?>
-
-                                        <div class="card-price">
+                                        <strong>
 
                                             <?= number_format(
                                                 (float)
-                                                $groupPrice,
+                                                (
+                                                    $stackItem['price']
+                                                    ?? $unitPrice
+                                                ),
                                                 2,
                                                 ',',
                                                 '.'
@@ -761,34 +707,227 @@ uasort(
 
                                             €
 
-                                        </div>
+                                        </strong>
 
-                                    <?php else: ?>
 
-                                        <div
-                                            class="card-price unavailable"
+                                        <input
+                                            type="checkbox"
+                                            class="item-checkbox"
+                                            data-asset-id="<?= htmlspecialchars(
+                                                (string)
+                                                (
+                                                    $stackItem['assetid']
+                                                    ?? ''
+                                                ),
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>"
+                                            data-stackable="1"
+                                            data-group-key="<?= htmlspecialchars(
+                                                $group['key'],
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>"
+                                            data-price="<?= (float) (
+                                                $stackItem['price']
+                                                ?? $unitPrice
+                                            ) ?>"
+                                            data-name="<?= htmlspecialchars(
+                                                $stackItem['name']
+                                                ?? 'Objeto',
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>"
+                                            data-market-hash-name="<?= htmlspecialchars(
+                                                $stackItem['market_hash_name']
+                                                ?? '',
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>"
                                         >
-                                            Precio no disponible
-                                        </div>
+
+                                    </label>
+
+                                <?php endforeach; ?>
+
+                            </div>
+
+
+                        <?php else: ?>
+
+                            <!-- =================================
+                                 OBJETO NORMAL
+                                 ================================= -->
+
+                            <?php
+
+                            $item =
+                                $representative;
+
+                            $itemPrice =
+                                (float)
+                                (
+                                    $item['price']
+                                    ?? 0
+                                );
+
+                            ?>
+
+
+                            <div
+                                class="inventory-card-image"
+                            >
+
+                                <?php if (
+                                    !empty(
+                                        $item['icon_url']
+                                    )
+                                ): ?>
+
+                                    <img
+                                        src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
+                                            $item['icon_url'],
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>/256fx256f"
+                                        alt=""
+                                        loading="lazy"
+                                    >
+
+                                <?php endif; ?>
+
+                            </div>
+
+
+                            <div
+                                class="inventory-card-content"
+                            >
+
+                                <span
+                                    class="inventory-card-type"
+                                >
+
+                                    <?= htmlspecialchars(
+                                        $item['type']
+                                        ?? $item['weapon']
+                                        ?? 'Objeto',
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+
+                                </span>
+
+
+                                <h3
+                                    class="inventory-card-name"
+                                    style="<?=
+                                        !empty(
+                                            $item['name_color']
+                                        )
+                                            ? 'color: '
+                                                . htmlspecialchars(
+                                                    $item['name_color'],
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                )
+                                                . ';'
+                                            : ''
+                                    ?>"
+                                >
+
+                                    <?= htmlspecialchars(
+                                        $item['name']
+                                        ?? 'Objeto desconocido',
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+
+                                </h3>
+
+
+                                <div
+                                    class="inventory-card-price"
+                                >
+
+                                    <strong>
+
+                                        <?= number_format(
+                                            $itemPrice,
+                                            2,
+                                            ',',
+                                            '.'
+                                        ) ?>
+
+                                        €
+
+                                    </strong>
+
+                                    <?php if (
+                                        !empty(
+                                            $item['price_count']
+                                        )
+                                    ): ?>
+
+                                        <small>
+
+                                            <?= (int)
+                                                $item['price_count'] ?>
+
+                                            mercados
+
+                                        </small>
 
                                     <?php endif; ?>
 
+                                </div>
 
+
+                                <!--
+                                    Esta zona siempre existe.
+                                    Si todavía no tenemos float,
+                                    JS mantiene el espacio.
+                                -->
+
+                                <div
+                                    class="inventory-float <?= !empty(
+                                        $item['has_float']
+                                    ) ? 'float-pending' : 'no-float' ?>"
                                     <?php if (
-                                        $group['price_count']
-                                        > 0
+                                        !empty(
+                                            $item['inspect_url']
+                                        )
                                     ): ?>
 
-                                        <div
-                                            class="card-markets"
-                                        >
-                                            <?= (int)
-                                                $group[
-                                                    'price_count'
-                                                ] ?>
+                                        data-inspect="<?= htmlspecialchars(
+                                            $item['inspect_url'],
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>"
 
-                                            mercados
-                                        </div>
+                                    <?php endif; ?>
+                                >
+
+                                    <?php if (
+                                        !empty(
+                                            $item['has_float']
+                                        )
+                                    ): ?>
+
+                                        <span
+                                            class="float-value"
+                                        >
+                                            Float cargando...
+                                        </span>
+
+                                        <div
+                                            class="float-bar"
+                                        ></div>
+
+                                    <?php else: ?>
+
+                                        <span>
+                                            &nbsp;
+                                        </span>
 
                                     <?php endif; ?>
 
@@ -796,489 +935,163 @@ uasort(
 
 
                                 <label
-                                    class="item-checkbox-wrapper"
+                                    class="card-checkbox"
                                 >
 
                                     <input
                                         type="checkbox"
-                                        class="
-                                            item-checkbox
-                                            <?= $group[
-                                                'stackable'
-                                            ] && $groupCount > 1
-                                                ? 'stack-master-checkbox'
-                                                : ''
-                                            ?>
-                                        "
-                                        data-group="<?= htmlspecialchars(
-                                            $group['key'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                    <span
-                                        class="custom-checkbox"
-                                    >
-                                    </span>
-
-                                </label>
-
-                            </div>
-
-
-                            <!-- =================================================
-                                 ELEMENTOS DESAGRUPADOS
-                                 ================================================= -->
-
-                            <?php if (
-                                $group['stackable']
-                                &&
-                                $groupCount > 1
-                            ): ?>
-
-                                <div
-                                    class="stack-items"
-                                >
-
-                                    <?php foreach (
-                                        $groupItems
-                                        as $stackItem
-                                    ): ?>
-
-                                        <?php
-
-                                        $stackNameColor =
-                                            $stackItem[
-                                                'name_color'
-                                            ]
-                                            ?? null;
-
-                                        $stackNameStyle =
-                                            $stackNameColor
-                                                ? '--item-name-color:#'
-                                                    . $stackNameColor
-                                                : '';
-
-                                        ?>
-
-                                        <div
-                                            class="stack-item"
-                                            data-price="<?= htmlspecialchars(
-                                                (string) (
-                                                    $stackItem[
-                                                        'price'
-                                                    ]
-                                                    ?? 0
-                                                ),
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            ) ?>"
-                                        >
-
-                                            <div
-                                                class="stack-item-image"
-                                            >
-
-                                                <?php if (
-                                                    !empty(
-                                                        $stackItem[
-                                                            'icon_url'
-                                                        ]
-                                                    )
-                                                ): ?>
-
-                                                    <img
-                                                        src="https://community.cloudflare.steamstatic.com/economy/image/<?= htmlspecialchars(
-                                                            $stackItem[
-                                                                'icon_url'
-                                                            ],
-                                                            ENT_QUOTES,
-                                                            'UTF-8'
-                                                        ) ?>/256fx256f"
-                                                        alt=""
-                                                        loading="lazy"
-                                                    >
-
-                                                <?php endif; ?>
-
-                                            </div>
-
-
-                                            <div
-                                                class="stack-item-info"
-                                            >
-
-                                                <strong
-                                                    style="<?= htmlspecialchars(
-                                                        $stackNameStyle,
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>"
-                                                >
-                                                    <?= htmlspecialchars(
-                                                        $stackItem[
-                                                            'name'
-                                                        ],
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>
-                                                </strong>
-
-
-                                                <?php if (
-                                                    !empty(
-                                                        $stackItem[
-                                                            'wear'
-                                                        ]
-                                                    )
-                                                ): ?>
-
-                                                    <span>
-                                                        <?= htmlspecialchars(
-                                                            $stackItem[
-                                                                'wear'
-                                                            ],
-                                                            ENT_QUOTES,
-                                                            'UTF-8'
-                                                        ) ?>
-                                                    </span>
-
-                                                <?php endif; ?>
-
-
-                                                <?php if (
-                                                    !empty(
-                                                        $stackItem[
-                                                            'has_float'
-                                                        ]
-                                                    )
-                                                ): ?>
-
-                                                    <span
-                                                        class="
-                                                            item-float
-                                                            stack-float
-                                                        "
-                                                        data-inspect-url="<?= htmlspecialchars(
-                                                            $stackItem[
-                                                                'inspect_url'
-                                                            ],
-                                                            ENT_QUOTES,
-                                                            'UTF-8'
-                                                        ) ?>"
-                                                    >
-                                                        Float
-                                                        <b>
-                                                            Cargando...
-                                                        </b>
-                                                    </span>
-
-                                                <?php endif; ?>
-
-                                            </div>
-
-
-                                            <div
-                                                class="stack-item-price"
-                                            >
-
-                                                <?php if (
-                                                    $stackItem[
-                                                        'price'
-                                                    ] !== null
-                                                ): ?>
-
-                                                    <?= number_format(
-                                                        (float)
-                                                        $stackItem[
-                                                            'price'
-                                                        ],
-                                                        2,
-                                                        ',',
-                                                        '.'
-                                                    ) ?>
-
-                                                    €
-
-                                                <?php else: ?>
-
-                                                    —
-
-                                                <?php endif; ?>
-
-                                            </div>
-
-
-                                            <label
-                                                class="
-                                                    item-checkbox-wrapper
-                                                    stack-child-checkbox
-                                                "
-                                            >
-
-                                                <input
-                                                    type="checkbox"
-                                                    class="item-checkbox"
-                                                    data-asset-id="<?= htmlspecialchars(
-                                                        (string) (
-                                                            $stackItem[
-                                                                'assetid'
-                                                            ]
-                                                            ?? ''
-                                                        ),
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>"
-                                                    data-name="<?= htmlspecialchars(
-                                                        $stackItem[
-                                                            'name'
-                                                        ],
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>"
-                                                    data-price="<?= htmlspecialchars(
-                                                        (string) (
-                                                            $stackItem[
-                                                                'price'
-                                                            ]
-                                                            ?? 0
-                                                        ),
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>"
-                                                    data-image="<?= htmlspecialchars(
-                                                        $stackItem[
-                                                            'icon_url'
-                                                        ]
-                                                        ?? '',
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>"
-                                                >
-
-                                                <span
-                                                    class="custom-checkbox"
-                                                >
-                                                </span>
-
-                                            </label>
-
-                                        </div>
-
-                                    <?php endforeach; ?>
-
-                                </div>
-
-                            <?php endif; ?>
-
-
-                            <!-- DATOS DEL ITEM PRINCIPAL -->
-
-                            <?php if (
-                                !(
-                                    $group['stackable']
-                                    &&
-                                    $groupCount > 1
-                                )
-                            ): ?>
-
-                                <div
-                                    class="single-item-data"
-                                >
-
-                                    <input
-                                        type="hidden"
-                                        class="single-item-name"
-                                        value="<?= htmlspecialchars(
-                                            $representative[
-                                                'name'
-                                            ],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                    <input
-                                        type="hidden"
-                                        class="single-item-price"
-                                        value="<?= htmlspecialchars(
-                                            (string) (
-                                                $representative[
-                                                    'price'
-                                                ]
-                                                ?? 0
-                                            ),
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                    <input
-                                        type="hidden"
-                                        class="single-item-asset"
-                                        value="<?= htmlspecialchars(
-                                            (string) (
-                                                $representative[
-                                                    'assetid'
-                                                ]
+                                        class="item-checkbox"
+                                        data-asset-id="<?= htmlspecialchars(
+                                            (string)
+                                            (
+                                                $item['assetid']
                                                 ?? ''
                                             ),
                                             ENT_QUOTES,
                                             'UTF-8'
                                         ) ?>"
-                                    >
-
-                                    <input
-                                        type="hidden"
-                                        class="single-item-image"
-                                        value="<?= htmlspecialchars(
-                                            $representative[
-                                                'icon_url'
-                                            ]
+                                        data-stackable="0"
+                                        data-price="<?= $itemPrice ?>"
+                                        data-name="<?= htmlspecialchars(
+                                            $item['name']
+                                            ?? 'Objeto',
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>"
+                                        data-market-hash-name="<?= htmlspecialchars(
+                                            $item['market_hash_name']
                                             ?? '',
                                             ENT_QUOTES,
                                             'UTF-8'
                                         ) ?>"
+                                    >
 
-                                </div>
+                                    <span></span>
 
-                            <?php endif; ?>
+                                </label>
 
+                            </div>
 
-                        </article>
+                        <?php endif; ?>
 
-                    <?php endforeach; ?>
+                    </article>
 
-                <?php endif; ?>
-
-            </section>
-
-
-            <div
-                class="no-search-results"
-                id="noSearchResults"
-                hidden
-            >
-                <strong>
-                    No se encontraron objetos.
-                </strong>
-
-                <span>
-                    Prueba con otro nombre o búsqueda.
-                </span>
-            </div>
-
-
-        <?php endif; ?>
-
-    </section>
-
-
-    <!-- =================================================
-         SELL SIDEBAR
-         ================================================= -->
-
-    <aside class="sell-sidebar">
-
-
-        <div class="sell-sidebar-header">
-
-            <div>
-
-                <span class="sell-icon">
-                    🛍
-                </span>
-
-                <strong>
-                    Tus artículos
-                </strong>
+                <?php endforeach; ?>
 
             </div>
 
-
-            <button
-                type="button"
-                id="clearSelection"
-                class="clear-selection"
-                title="Vaciar selección"
-                disabled
-            >
-                Vaciar
-            </button>
-
-        </div>
+        </section>
 
 
-        <div
-            class="selected-items"
-            id="selectedItems"
+        <!-- =============================================
+             PANEL DERECHO
+             ============================================= -->
+
+        <aside
+            class="selected-panel"
         >
 
             <div
-                class="selected-empty"
-                id="selectedEmpty"
+                class="selected-panel-header"
             >
 
-                <div>
-                    🛒
+                <div
+                    class="selected-title-row"
+                >
+
+                    <h2>
+                        Tus artículos
+                    </h2>
+
+                    <span
+                        id="selected-count"
+                        class="selected-count"
+                    >
+                        0
+                    </span>
+
                 </div>
 
-                <p>
-                    Añade los artículos
-                    que quieras vender
-                </p>
 
-            </div>
+                <!--
+                    Solo aparece cuando hay selección
+                    de objetos agrupables.
+                -->
 
-        </div>
-
-
-        <div class="sell-sidebar-bottom">
-
-
-            <div class="selected-total">
-
-                <span>
-                    TOTAL
-                </span>
-
-                <strong id="selectedTotal">
-                    0,00 €
-                </strong>
+                <button
+                    type="button"
+                    id="exit-group-selection"
+                    class="exit-group-selection"
+                    hidden
+                >
+                    ← Salir de selección
+                </button>
 
             </div>
 
 
-            <button
-                type="button"
-                class="sell-button"
-                id="sellButton"
-                disabled
+            <div
+                id="selected-items"
+                class="selected-items"
             >
 
-                <span>
-                    ⚡
-                </span>
+                <div
+                    class="selected-empty"
+                >
+                    Selecciona objetos para añadirlos aquí.
+                </div>
 
-                Vender
-
-            </button>
+            </div>
 
 
-            <small class="sell-notice">
-                La publicación de objetos se conectará
-                en una fase posterior.
-            </small>
+            <div
+                class="selected-panel-footer"
+            >
 
-        </div>
+                <div
+                    class="selected-total"
+                >
 
-    </aside>
+                    <span>
+                        Total
+                    </span>
+
+                    <strong
+                        id="selected-total"
+                    >
+                        0,00 €
+                    </strong>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    id="sell-selected"
+                    class="sell-button"
+                    disabled
+                >
+                    Vender
+                </button>
+
+            </div>
+
+        </aside>
+
+    <?php endif; ?>
 
 </main>
 
 
-<script src="js/app.js"></script>
+<div
+    id="inventory-toast"
+    class="inventory-toast"
+></div>
+
+
+<script
+    src="js/app.js"
+></script>
 
 </body>
 
