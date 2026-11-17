@@ -284,6 +284,53 @@ class SteamInventory
 
         /*
          * -------------------------------------------------
+         * MAPA DE PROPIEDADES
+         * -------------------------------------------------
+         *
+         * Steam devuelve el float (propertyid 2),
+         * el pattern (1) y el certificado del inspect
+         * link (6) en asset_properties.
+         */
+
+        $propertyMap = [];
+
+        foreach (
+            $data['asset_properties'] ?? []
+            as $entry
+        ) {
+            $entryAssetId =
+                (string)
+                (
+                    $entry['assetid']
+                    ?? ''
+                );
+
+            if (
+                $entryAssetId === ''
+            ) {
+                continue;
+            }
+
+            foreach (
+                $entry['asset_properties'] ?? []
+                as $property
+            ) {
+                $propertyMap[$entryAssetId][
+                    (int)
+                    (
+                        $property['propertyid']
+                        ?? 0
+                    )
+                ] =
+                    $property['float_value']
+                    ?? $property['int_value']
+                    ?? $property['string_value']
+                    ?? null;
+            }
+        }
+
+        /*
+         * -------------------------------------------------
          * ASSETS
          * -------------------------------------------------
          */
@@ -414,6 +461,16 @@ class SteamInventory
              * -------------------------------------------------
              */
 
+            $properties =
+                $propertyMap[
+                    (string)
+                    (
+                        $asset['assetid']
+                        ?? ''
+                    )
+                ]
+                ?? [];
+
             $inspectUrl =
                 $this->extractInspectUrl(
                     $description,
@@ -422,16 +479,28 @@ class SteamInventory
                     (
                         $asset['assetid']
                         ?? ''
-                    )
+                    ),
+                    $properties
                 );
 
             /*
-             * Un objeto solo puede cargar float si
-             * tenemos un inspect real.
+             * Un objeto tiene float si Steam lo devuelve
+             * o, en su defecto, si tiene inspect real y
+             * desgaste (exterior). Agentes, pins, charms,
+             * kits de música, etc. tienen inspect pero
+             * no float.
              */
             $hasFloat =
-                $this->hasValidInspectUrl(
-                    $inspectUrl
+                isset($properties[2])
+                ||
+                (
+                    $this->hasValidInspectUrl(
+                        $inspectUrl
+                    )
+                    &&
+                    !empty($exterior)
+                    &&
+                    $exterior !== 'Not Painted'
                 );
 
             /*
@@ -591,6 +660,16 @@ class SteamInventory
                 'has_float' =>
                     $hasFloat,
 
+                'float' =>
+                    isset($properties[2])
+                        ? (float) $properties[2]
+                        : null,
+
+                'paint_seed' =>
+                    isset($properties[1])
+                        ? (int) $properties[1]
+                        : null,
+
                 'stackable' =>
                     $stackable,
             ];
@@ -605,7 +684,8 @@ class SteamInventory
     private function extractInspectUrl(
         array $description,
         string $steamId,
-        string $assetId
+        string $assetId,
+        array $properties = []
     ): ?string {
         $actions =
             $description['actions']
@@ -642,6 +722,21 @@ class SteamInventory
                     ],
                     $link
                 );
+
+            /*
+             * Formato nuevo de CS2: el inspect link
+             * es el certificado (propertyid 6).
+             */
+            foreach (
+                $properties as $propertyId => $value
+            ) {
+                $link =
+                    str_replace(
+                        '%propid:' . $propertyId . '%',
+                        (string) $value,
+                        $link
+                    );
+            }
 
             /*
              * Si Steam deja placeholders,

@@ -723,6 +723,15 @@ usort(
                                                 'UTF-8'
                                             ) ?>"
                                             data-stackable="1"
+                                            data-image="<?= htmlspecialchars(
+                                                (string)
+                                                (
+                                                    $stackItem['icon_url']
+                                                    ?? ''
+                                                ),
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>"
                                             data-group-key="<?= htmlspecialchars(
                                                 $group['key'],
                                                 ENT_QUOTES,
@@ -888,6 +897,47 @@ usort(
                                     JS mantiene el espacio.
                                 -->
 
+                                <?php if (
+                                    isset(
+                                        $item['float']
+                                    )
+                                ): ?>
+
+                                <!--
+                                    Float servido directamente
+                                    por Steam (asset_properties).
+                                -->
+
+                                <div
+                                    class="inventory-float float-loaded"
+                                >
+
+                                    <span
+                                        class="float-value"
+                                    >
+                                        Float <?= number_format(
+                                            (float) $item['float'],
+                                            6,
+                                            '.',
+                                            ''
+                                        ) ?>
+                                    </span>
+
+                                    <div
+                                        class="float-bar"
+                                        style="--wear: <?= max(
+                                            0,
+                                            min(
+                                                1,
+                                                (float) $item['float']
+                                            )
+                                        ) ?>"
+                                    ></div>
+
+                                </div>
+
+                                <?php else: ?>
+
                                 <div
                                     class="inventory-float <?= !empty(
                                         $item['has_float']
@@ -933,6 +983,8 @@ usort(
 
                                 </div>
 
+                                <?php endif; ?>
+
 
                                 <label
                                     class="card-checkbox"
@@ -951,6 +1003,25 @@ usort(
                                             'UTF-8'
                                         ) ?>"
                                         data-stackable="0"
+                                        data-image="<?= htmlspecialchars(
+                                            (string)
+                                            (
+                                                $item['icon_url']
+                                                ?? ''
+                                            ),
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>"
+                                        data-float="<?= isset(
+                                            $item['float']
+                                        )
+                                            ? number_format(
+                                                (float) $item['float'],
+                                                6,
+                                                '.',
+                                                ''
+                                            )
+                                            : '' ?>"
                                         data-price="<?= $itemPrice ?>"
                                         data-name="<?= htmlspecialchars(
                                             $item['name']

@@ -144,6 +144,54 @@ document.addEventListener(
         }
 
 
+        /*
+         * Miniatura para el panel de seleccionados.
+         */
+        function createThumb(
+            checkbox
+        ) {
+
+            const thumb =
+                document.createElement(
+                    'div'
+                );
+
+            thumb.className =
+                'selected-thumb';
+
+
+            if (
+                checkbox.dataset.image
+            ) {
+
+                const img =
+                    document.createElement(
+                        'img'
+                    );
+
+                img.src =
+                    'https://community.cloudflare.steamstatic.com/economy/image/'
+                    +
+                    checkbox.dataset.image
+                    +
+                    '/96fx96f';
+
+                img.alt =
+                    '';
+
+                img.loading =
+                    'lazy';
+
+                thumb.appendChild(
+                    img
+                );
+            }
+
+
+            return thumb;
+        }
+
+
         function formatPrice(
             value
         ) {
@@ -398,11 +446,11 @@ document.addEventListener(
                         );
 
 
-                    /*
-                     * IMPORTANTE:
-                     *
-                     * No añadimos imagen.
-                     */
+                    row.appendChild(
+                        createThumb(
+                            items[0]
+                        )
+                    );
 
                     row.appendChild(
                         info
@@ -478,6 +526,35 @@ document.addEventListener(
                         price
                     );
 
+
+                    if (
+                        checkbox.dataset.float
+                    ) {
+
+                        const floatValue =
+                            document.createElement(
+                                'small'
+                            );
+
+                        floatValue.className =
+                            'selected-item-float';
+
+                        floatValue.textContent =
+                            'Float '
+                            +
+                            checkbox.dataset.float;
+
+                        info.appendChild(
+                            floatValue
+                        );
+                    }
+
+
+                    row.appendChild(
+                        createThumb(
+                            checkbox
+                        )
+                    );
 
                     row.appendChild(
                         info
@@ -1632,6 +1709,31 @@ document.addEventListener(
                 element.classList.add(
                     'float-loaded'
                 );
+
+
+                /*
+                 * Guardar el float en el checkbox
+                 * para el panel de seleccionados.
+                 */
+
+                const cardCheckbox =
+                    element
+                        .closest(
+                            '.inventory-card'
+                        )
+                        ?.querySelector(
+                            '.item-checkbox'
+                        );
+
+                if (
+                    cardCheckbox
+                ) {
+
+                    cardCheckbox.dataset.float =
+                        floatValue.toFixed(
+                            6
+                        );
+                }
 
             } else {
 

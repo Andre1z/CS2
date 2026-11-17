@@ -119,10 +119,15 @@ class SkinFloatService
         }
 
         /*
-         * Consultar CSGOFloat.
+         * 1) Decodificar el certificado del inspect
+         *    link (formato nuevo de CS2), sin red.
+         * 2) Si no se puede, consultar CSGOFloat.
          */
         $result =
-            $this->requestFloat(
+            $this->decodeInspectCertificate(
+                $inspectUrl
+            )
+            ?? $this->requestFloat(
                 $inspectUrl
             );
 
@@ -227,6 +232,219 @@ class SkinFloatService
          * exigimos obligatoriamente este patrón.
          */
         return true;
+    }
+
+    /**
+     * Decodifica el certificado hexadecimal de los
+     * inspect links nuevos de CS2.
+     *
+     * Estructura:
+     *
+     * [clave XOR] + protobuf CEconItemPreviewDataBlock + CRC (4 bytes)
+     *
+     * Todos los bytes van con XOR de la clave
+     * (el primer byte descifrado siempre es 0).
+     *
+     * Campos usados del protobuf:
+     * - 7: paintwear (bits de un float32)
+     * - 8: paintseed
+     */
+    private function decodeInspectCertificate(
+        string $inspectUrl
+    ): ?array {
+        if (
+            !preg_match(
+                '/csgo_econ_action_preview(?:%20|\s)+([0-9A-F]+)$/i',
+                rawurldecode($inspectUrl),
+                $matches
+            )
+        ) {
+            return null;
+        }
+
+        $hex =
+            $matches[1];
+
+        /*
+         * Los enlaces clásicos S..A..D.. no son hex puro.
+         */
+        if (
+            strlen($hex) % 2 !== 0
+            ||
+            strlen($hex) < 12
+        ) {
+            return null;
+        }
+
+        $bytes =
+            (string) hex2bin($hex);
+
+        $key =
+            ord($bytes[0]);
+
+        $decoded = '';
+
+        for (
+            $i = 0;
+            $i < strlen($bytes);
+            $i++
+        ) {
+            $decoded .=
+                chr(
+                    ord($bytes[$i]) ^ $key
+                );
+        }
+
+        $proto =
+            substr($decoded, 1, -4);
+
+        $fields =
+            $this->parseProtobuf($proto);
+
+        if (
+            $fields === null
+            ||
+            !isset($fields[7])
+        ) {
+            return null;
+        }
+
+        $float =
+            unpack(
+                'g',
+                pack('V', $fields[7])
+            )[1];
+
+        return [
+            'float' =>
+                (float) $float,
+
+            'paint_seed' =>
+                isset($fields[8])
+                    ? (int) $fields[8]
+                    : null,
+
+            'wear' =>
+                null,
+        ];
+    }
+
+    /**
+     * Parser mínimo de protobuf: devuelve los campos
+     * escalares (varint / fixed32) indexados por número.
+     */
+    private function parseProtobuf(
+        string $data
+    ): ?array {
+        $fields = [];
+
+        $offset = 0;
+
+        $length =
+            strlen($data);
+
+        $readVarint =
+            function () use (
+                $data,
+                $length,
+                &$offset
+            ): ?int {
+                $result = 0;
+
+                $shift = 0;
+
+                do {
+                    if (
+                        $offset >= $length
+                        ||
+                        $shift > 63
+                    ) {
+                        return null;
+                    }
+
+                    $byte =
+                        ord($data[$offset++]);
+
+                    $result |=
+                        ($byte & 0x7F) << $shift;
+
+                    $shift += 7;
+
+                } while ($byte & 0x80);
+
+                return $result;
+            };
+
+        while (
+            $offset < $length
+        ) {
+            $tag =
+                $readVarint();
+
+            if (
+                $tag === null
+            ) {
+                return null;
+            }
+
+            $field =
+                $tag >> 3;
+
+            switch ($tag & 7) {
+                case 0:
+                    $value =
+                        $readVarint();
+
+                    if (
+                        $value === null
+                    ) {
+                        return null;
+                    }
+
+                    $fields[$field] =
+                        $value;
+
+                    break;
+
+                case 2:
+                    $size =
+                        $readVarint();
+
+                    if (
+                        $size === null
+                        ||
+                        $offset + $size > $length
+                    ) {
+                        return null;
+                    }
+
+                    $offset += $size;
+
+                    break;
+
+                case 5:
+                    if (
+                        $offset + 4 > $length
+                    ) {
+                        return null;
+                    }
+
+                    $fields[$field] =
+                        unpack(
+                            'V',
+                            substr($data, $offset, 4)
+                        )[1];
+
+                    $offset += 4;
+
+                    break;
+
+                default:
+                    return null;
+            }
+        }
+
+        return $fields;
     }
 
     /**
